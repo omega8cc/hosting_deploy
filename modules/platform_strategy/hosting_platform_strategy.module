@@ -1,0 +1,53 @@
+<?php
+/**
+ * @file
+ * Drupal hooks for the hosting_platform_strategy module.
+ */
+
+/**
+ * Implements hook_form_alter().
+ */
+function hosting_platform_strategy_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'platform_node_form') {
+    $platform_node_form = new HostingPlatformStrategyForm($form, $form_state);
+    $platform_node_form->alter();
+  }
+}
+
+/**
+ * Implements hook_node_view().
+ */
+function hosting_platform_strategy_node_view($node, $view_mode, $langcode) {
+  if ($node->type == 'platform') {
+    $platform = new HostingPlatformStrategyNode($node);
+    $platform->nodeView();
+  }
+}
+
+/**
+ * Implements hook_platform_deploy_strategies().
+ */
+function hosting_platform_strategy_platform_deploy_strategies() {
+  return [
+    'none' => t('None (not managed by Aegir)'),
+  ];
+}
+
+/**
+ * Implements hook_platform_deploy_strategies_alter().
+ */
+function hosting_platform_strategy_platform_deploy_strategies_alter(&$strategies) {
+  if (module_exists('hosting_git')) {
+    $strategies['frommakefile'] = t('Deploy from Drush makefile');
+    $strategies['git'] = t('Manage with Git');
+  }
+}
+
+/**
+ * Callback to populate the list of valid options for deployment strategies.
+ */
+function hosting_platform_strategy_get_strategies_options_list() {
+  $strategy_options = new HostingPlatformStrategyForm($form = [], $form_state = []);
+  $strategy_options->getStrategies();
+}
+
