@@ -2,6 +2,7 @@ name = Aegir Platform Git
 description = Build Aegir platforms from Git.
 core = 7.x
 package = Aegir Git
+dependencies[] = aegir_objects
 dependencies[] = features
 dependencies[] = hosting_platform
 dependencies[] = text

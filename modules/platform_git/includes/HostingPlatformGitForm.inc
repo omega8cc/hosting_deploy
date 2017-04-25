@@ -24,24 +24,24 @@ class HostingPlatformGitForm extends HostingForm {
     $this->moveFieldsIntoFieldset('platform_git', $this->fields);
     $this->form['platform_git']['#title'] = 'Deploy from Git';
     $this->form['platform_git']['#description'] = 'You may deploy this platform from a Git repository. This strategy is appropriate for hosting scenarios where multiple sites will share common platforms.';
+    $this->addSubmitHandler('hosting_platform_git_platform_submit');
   }
 
-  public function nodeSubmit() {
+  public function submit() {
+    $this->setRepositoryPath();
+    $this->setPublishPath();
+  }
+
+  protected function setRepositoryPath() {
     if ($this->isANewNode() && !empty($this->getFormStateValue('field_git_repository_url'))) {
-      $this->setFormStateValue('field_git_repository_path', $this->node->publish_path);
-    #  $this->platform->setFieldValue('field_git_repository_path', $this->node->publish_path);
+      $this->setFormStateValue('field_git_repository_path', $this->getFormStateValue('publish_path'));
     }
-    if (!empty($this->getFormStateValue('field_git_docroot')) && !empty($this->getFormStateValue('field_git_repository_url'))) {
+  }
+
+  protected function setPublishPath() {
+    if (!empty($this->getFormStateValue('field_git_docroot'))) {
       $publish_path = $this->getFormStateValue('field_git_repository_path') . '/' . $this->getFormStateValue('field_git_docroot');
       $this->setFormStateValue('publish_path', $publish_path);
-      $this->platform->setProperty('publish_path', $publish_path);
-    }
-  }
-
-  public function fieldAttachSubmit() {
-    if ($this->isANewNode() && !empty($this->getFormStateValue('field_git_repository_url'))) {
-      $this->setFormStateValue('field_git_repository_path', $this->node->publish_path);
-      $this->platform->setFieldValue('field_git_repository_path', $this->node->publish_path);
     }
   }
 
