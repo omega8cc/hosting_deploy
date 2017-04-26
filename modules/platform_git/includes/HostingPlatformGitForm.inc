@@ -21,10 +21,20 @@ class HostingPlatformGitForm extends HostingForm {
   }
 
   public function alter() {
+    $this->disableField('field_git_repository_path');
+    $this->lockFields();
     $this->moveFieldsIntoFieldset('platform_git', $this->fields);
     $this->form['platform_git']['#title'] = 'Deploy from Git';
     $this->form['platform_git']['#description'] = 'You may deploy this platform from a Git repository. This strategy is appropriate for hosting scenarios where multiple sites will share common platforms.';
     $this->addSubmitHandler('hosting_platform_git_platform_submit');
+  }
+
+  protected function lockFields() {
+    if (isset($this->node->platform_status) && $this->node->platform_status != HOSTING_PLATFORM_QUEUED) {
+      foreach ($this->fields as $field) {
+        $this->makeFieldReadOnly($field);
+      }
+    }
   }
 
   public function submit() {

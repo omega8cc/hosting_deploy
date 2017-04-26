@@ -15,7 +15,7 @@ function hosting_platform_git_field_default_field_instances() {
     'bundle' => 'platform',
     'default_value' => NULL,
     'deleted' => 0,
-    'description' => '',
+    'description' => 'If Drupal resides in a sub-directory of your Git repository, specify it here. This path should be relative to the root of the git repository.',
     'display' => array(
       'default' => array(
         'label' => 'above',
@@ -55,7 +55,7 @@ function hosting_platform_git_field_default_field_instances() {
     'bundle' => 'platform',
     'default_value' => NULL,
     'deleted' => 0,
-    'description' => '',
+    'description' => 'A branch, tag or commit hash to checkout once the repository is cloned. Note that specifying a commit hash can take significantly longer, as the entire Git history must be fetched.',
     'display' => array(
       'default' => array(
         'label' => 'above',
@@ -135,7 +135,7 @@ function hosting_platform_git_field_default_field_instances() {
     'bundle' => 'platform',
     'default_value' => NULL,
     'deleted' => 0,
-    'description' => '',
+    'description' => 'The URL of the Git repository that will be cloned to deploy this platform. Note that this repository must be accessible by the `aegir` system user.',
     'display' => array(
       'default' => array(
         'label' => 'above',
@@ -172,8 +172,11 @@ function hosting_platform_git_field_default_field_instances() {
 
   // Translatables
   // Included for use with string extractors like potx.
+  t('If Drupal resides in a sub-directory of your Git repository, specify it here. This path should be relative to the root of the git repository.');
   t('Docroot');
+  t('A branch, tag or commit hash to checkout once the repository is cloned. Note that specifying a commit hash can take significantly longer, as the entire Git history must be fetched.');
   t('Git reference');
+  t('The URL of the Git repository that will be cloned to deploy this platform. Note that this repository must be accessible by the `aegir` system user.');
   t('Git repository URL');
   t('Git repository path');
 

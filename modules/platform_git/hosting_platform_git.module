@@ -43,6 +43,11 @@ function hosting_platform_git_node_view($node, $view_mode, $langcode) {
  * Implements hook_platform_deploy_strategies().
  */
 function hosting_platform_git_platform_deploy_strategies() {
-  return ['platform_git' => t('Deploy from Git repository')];
+  return ['platform_git' => [
+    'label' => t('Deploy from Git repository'),
+    'required_fields' => [
+      'field_git_repository_url',
+    ],
+  ]];
 }
 

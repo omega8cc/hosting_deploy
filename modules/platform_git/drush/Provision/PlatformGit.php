@@ -21,51 +21,102 @@ class Provision_PlatformGit extends Provision_ShellCommand {
   // The Git reference that we'll clone or checkout.
   protected $reference = FALSE;
 
+  // A list of references fetched from a Git repository.
+  protected $references = [];
+
   public function validateProvisionVerify() {
     if ($this->pathExists($this->repository_path)) {
-      return $this->error(dt('Platform Git repository path already exists. Aborting.'));
+      return $this->notice(dt('Platform Git repository path already exists. Aborting.'));
     }
     else {
-      $this->notice(dt("Platform Git repository path does not exist."));
-      return $this->gitClone();
+      $this->notice(dt('Platform Git repository path does not exist. Proceeding.'));
+      return $this->deployPlatform();
     }
   }
 
-  /**
-   * Implements the provision-git-clone command.
-   */
+  protected function deployPlatform() {
+    $this->notice(dt('Deploying platform.'));
+    return $this->gitClone() && $this->gitCheckout();
+  }
+
   protected function gitClone() {
     $this->notice(dt('Cloning `:url` to `:path`', [
       ':url' => $this->repository_url,
       ':path' => $this->repository_path,
     ]));
 
-    $command = 'git clone --recursive --depth=1';
-    if ($this->referenceIsBranch()) {
+    return $this->runCommand($this->buildGitCloneCommand());
+  }
+
+  protected function gitCheckout() {
+    if ($this->referenceIsACommit()) {
+      $this->notice(dt('Fetching full Git history and checking out commit `:ref`', [
+        ':ref' => $this->reference,
+      ]));
+
+      return $this->runCommand($this->buildGitCheckoutCommand());
+    }
+  }
+
+  protected function buildGitCloneCommand() {
+    $command = 'git clone --recursive --depth 1 --no-progress --quiet';
+    if ($this->referenceIsABranch() || $this->referenceIsATag()) {
       $command .= ' --branch ' . escapeshellarg(trim($this->reference));
     }
     $command .= ' ' . escapeshellarg(trim($this->repository_url));
     $command .= ' ' . escapeshellarg(trim($this->repository_path));
+    return $command;
+  }
 
-    return $this->runCommand($command);
+  protected function buildGitCheckoutCommand() {
+    $command = 'cd ' . escapeshellarg(trim($this->repository_path));
+    $command .= ' && git fetch --unshallow && ';
+    $command .= 'git checkout ' . escapeshellarg(trim($this->reference));
+    return $command;
   }
 
   protected function runCommand($command) {
-
     $this->notice("Running `$command`");
     if (drush_shell_exec($command)) {
-      $this->success(dt('Clone successful.'));
+      $this->success(dt('Command succeeded.'));
       $this->success(implode("\n", drush_shell_exec_output()));
+      return TRUE;
     }
     else {
-      return $this->error(dt("Git clone failed! \nThe specific errors are below:\n!errors", array('!errors' => implode("\n", drush_shell_exec_output()))));
+      $this->error(dt('Command failed. The specific errors follow:'));
+      $this->error(implode("\n", drush_shell_exec_output()));
+      return FALSE;
     }
   }
 
-  protected function referenceIsBranch() {
-    // TODO: implement this check so that we can determine whether to clone a
-    // branch, or the full repo, the checkout.
-    return TRUE;
+  protected function referenceIsABranch() {
+    return $this->reference && in_array($this->reference, $this->lsRemote('heads'));
+  }
+
+  protected function referenceIsATag() {
+    return $this->reference && in_array($this->reference, $this->lsRemote('tags'));
+  }
+
+  protected function referenceIsACommit() {
+    return $this->reference && !$this->referenceIsABranch() && !$this->referenceIsATag();
+  }
+
+  protected function lsRemote($type = FALSE) {
+    if (empty($this->references)) {
+      $this->notice(dt('Scanning remote git repository tags and branches.'));
+      $debug = drush_get_context('DRUSH_DEBUG');
+      drush_set_context('DRUSH_DEBUG', FALSE);
+      drush_shell_exec('git ls-remote ' . escapeshellarg(trim($this->repository_url)));
+      drush_set_context('DRUSH_DEBUG', $debug);
+      $lines = drush_shell_exec_output();
+      foreach ($lines as $line) {
+        $ref = explode('/', $line);
+        if (isset($ref[1]) && isset($ref[2])) {
+          $this->references[$ref[1]][] = $ref[2];
+        }
+      }
+    }
+    return $type ? $this->references[$type] : $this->references;
   }
 
   public function postProvisionDelete() {

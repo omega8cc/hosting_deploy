@@ -9,8 +9,8 @@
  */
 function hosting_platform_git_hosting_feature() {
   $features['platform_git'] = array(
-    'title' => t('Platform Git'),
-    'description' => t('Build platforms from Git.'),
+    'title' => t('Git Deploy'),
+    'description' => t('Deploy platforms using Git.'),
     'status' => HOSTING_FEATURE_DISABLED,
     'module' => 'hosting_platform_git',
     'group' => 'experimental',

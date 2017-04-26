@@ -25,7 +25,7 @@ class Provision_ShellCommand {
     $context_property_name = $this->context_prefix . $property;
     $context_property = d()->$context_property_name;
     if (is_null($context_property)) {
-      return $this->error(dt('Required context property missing: ') . $context_property_name);
+      return $this->notice(dt('Skipping unset context property: ') . $context_property_name);
     }
     $this->$property = $context_property;
   }
