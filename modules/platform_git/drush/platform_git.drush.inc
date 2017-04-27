@@ -15,9 +15,7 @@
 function drush_platform_git_provision_verify_validate() {
   if (d()->type == 'platform' && d()->git_repository_url) {
     $platform = new Provision_PlatformGit();
-    if ($platform->initialize()) {
-      return $platform->validateProvisionVerify();
-    }
+    return $platform->validateProvisionVerify();
   }
 }
 
@@ -29,9 +27,7 @@ function drush_platform_git_provision_verify_validate() {
 function drush_platform_git_post_provision_delete() {
   if (d()->type =='platform') {
     $platform = new Provision_PlatformGit();
-    if ($platform->initialize()) {
-      return $platform->postProvisionDelete();
-    }
+    return $platform->postProvisionDelete();
   }
 }
 

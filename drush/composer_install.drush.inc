@@ -11,19 +11,17 @@
  * We need to run 'composer install' after the platform has been created, in
  * the validate hook, but before the rest of hosting_platform kicks in.
  */
-function drush_platform_composer_pre_provision_verify() {
+function drush_composer_install_pre_provision_verify() {
   if (d()->type =='platform') {
     $platform = new Provision_ComposerInstall();
-    if ($platform->initialize()) {
-      return $platform->preProvisionVerify();
-    }
+    $platform->preProvisionVerify();
   }
 }
 
 /**
  * Register our directory as a place to find provision classes.
  */
-function platform_composer_register_autoload() {
+function composer_install_register_autoload() {
   static $loaded = FALSE;
   if (!$loaded) {
     $loaded = TRUE;
@@ -34,7 +32,7 @@ function platform_composer_register_autoload() {
 /**
  * Implements hook_drush_init().
  */
-function platform_composer_drush_init() {
-  platform_composer_register_autoload();
+function composer_install_drush_init() {
+  composer_install_register_autoload();
 }
 
