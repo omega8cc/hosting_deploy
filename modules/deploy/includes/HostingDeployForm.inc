@@ -1,14 +1,14 @@
 <?php
 /**
- * @file The HostingPlatformStrategyForm class.
+ * @file The HostingDeployForm class.
  */
 
-class HostingPlatformStrategyForm extends HostingForm {
+class HostingDeployForm extends HostingForm {
 
   public function __construct(&$form, &$form_state, &$node = FALSE) {
     parent::__construct($form, $form_state, $node);
     if ($this->node->type == 'platform') {
-      $this->platform = new HostingPlatformStrategyNode($this->node);
+      $this->platform = new HostingDeployNode($this->node);
     }
   }
 

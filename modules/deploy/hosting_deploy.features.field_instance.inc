@@ -1,13 +1,13 @@
 <?php
 /**
  * @file
- * hosting_platform_strategy.features.field_instance.inc
+ * hosting_deploy.features.field_instance.inc
  */
 
 /**
  * Implements hook_field_default_field_instances().
  */
-function hosting_platform_strategy_field_default_field_instances() {
+function hosting_deploy_field_default_field_instances() {
   $field_instances = array();
 
   // Exported field_instance: 'node-platform-field_deployment_strategy'.

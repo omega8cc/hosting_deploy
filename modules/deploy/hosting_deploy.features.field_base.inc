@@ -1,13 +1,13 @@
 <?php
 /**
  * @file
- * hosting_platform_strategy.features.field_base.inc
+ * hosting_deploy.field_base.inc
  */
 
 /**
  * Implements hook_field_default_field_bases().
  */
-function hosting_platform_strategy_field_default_field_bases() {
+function hosting_deploy_field_default_field_bases() {
   $field_bases = array();
 
   // Exported field_base: 'field_deployment_strategy'.
@@ -28,7 +28,7 @@ function hosting_platform_strategy_field_default_field_bases() {
       'allowed_values' => array(
         'frommakefile' => 'Deploy from Drush makefile',
       ),
-      'allowed_values_function' => 'hosting_platform_strategy_get_strategies_options_list',
+      'allowed_values_function' => 'hosting_deploy_get_strategies_options_list',
     ),
     'translatable' => 0,
     'type' => 'list_text',
