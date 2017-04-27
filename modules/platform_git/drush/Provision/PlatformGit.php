@@ -29,7 +29,6 @@ class Provision_PlatformGit extends Provision_ShellCommand {
       return $this->notice(dt('Platform Git repository path already exists. Aborting.'));
     }
     else {
-      $this->notice(dt('Platform Git repository path does not exist. Proceeding.'));
       return $this->deployPlatform();
     }
   }
@@ -56,6 +55,7 @@ class Provision_PlatformGit extends Provision_ShellCommand {
 
       return $this->runCommand($this->buildGitCheckoutCommand());
     }
+    return TRUE;
   }
 
   protected function buildGitCloneCommand() {
@@ -73,20 +73,6 @@ class Provision_PlatformGit extends Provision_ShellCommand {
     $command .= ' && git fetch --unshallow && ';
     $command .= 'git checkout ' . escapeshellarg(trim($this->reference));
     return $command;
-  }
-
-  protected function runCommand($command) {
-    $this->notice("Running `$command`");
-    if (drush_shell_exec($command)) {
-      $this->success(dt('Command succeeded.'));
-      $this->success(implode("\n", drush_shell_exec_output()));
-      return TRUE;
-    }
-    else {
-      $this->error(dt('Command failed. The specific errors follow:'));
-      $this->error(implode("\n", drush_shell_exec_output()));
-      return FALSE;
-    }
   }
 
   protected function referenceIsABranch() {
