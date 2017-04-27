@@ -1,0 +1,6 @@
+name = Aegir Composer support
+description = Adds support for building platform dependencies using Composer.
+core = 7.x
+package = Aegir Deployment
+dependencies[] = aegir_objects
+dependencies[] = hosting_platform
