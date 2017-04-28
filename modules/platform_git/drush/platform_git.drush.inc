@@ -19,7 +19,14 @@ function drush_platform_git_provision_verify_validate() {
   }
 }
 
- /**
+/**
+ * Implements hook_composer_install_path().
+ */
+function platform_git_composer_install_path() {
+  return d()->git_repository_path;
+}
+
+/**
  * Implements drush_HOOK_post_COMMAND() for provision-delete command.
  *
  * If repository path is different from root, delete it too.
