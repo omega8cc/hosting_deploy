@@ -7,6 +7,7 @@ dependencies[] = aegir_objects
 dependencies[] = features
 dependencies[] = hosting_platform
 dependencies[] = hosting_deploy
+dependencies[] = hosting_composer
 dependencies[] = text
 features[features_api][] = api:2
 features[field_base][] = field_composer_project_docroot
