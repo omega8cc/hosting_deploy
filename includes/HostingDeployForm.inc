@@ -77,14 +77,14 @@ class HostingDeployForm extends HostingForm {
     }
   }
 
-  protected function getStrategies() {
+  static protected function getStrategies() {
     $strategies = module_invoke_all('platform_deploy_strategies');
     drupal_alter('platform_deploy_strategies', $strategies);
     return $strategies;
   }
 
-  public function getStrategyLabels() {
-    foreach ($this->getStrategies() as $name => $strategy) {
+  static public function getStrategyLabels() {
+    foreach (self::getStrategies() as $name => $strategy) {
       $strategies[$name] = $strategy['label'];
     }
     return $strategies;
