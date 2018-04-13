@@ -78,7 +78,7 @@ class Provision_ComposerGitCreateProject extends Provision_ShellCommand {
 
   public function postProvisionDelete() {
     if ($this->path != d()->root) {
-      $this->notice(t('Deleting Composer project path at: ') . d()->composer_git_path);
+      $this->notice(dt('Deleting Composer project path at: ') . d()->composer_git_path);
       _provision_recursive_delete($this->path);
     }
   }
