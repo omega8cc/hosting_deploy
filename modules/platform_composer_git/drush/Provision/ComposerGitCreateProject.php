@@ -37,6 +37,7 @@ class Provision_ComposerGitCreateProject extends Provision_ShellCommand {
 
   protected function createProject() {
     $this->notice(dt('Creating `:version` version of project from `:project_url` at `:path`', [
+      ':version' => $this->version,
       ':project_url' => $this->project_url,
       ':path' => $this->path,
     ]));
