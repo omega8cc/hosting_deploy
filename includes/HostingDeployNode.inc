@@ -10,8 +10,7 @@ class HostingDeployNode extends HostingNode {
 
   public function nodeView() {
     parent::nodeView();
-    $strategy_form = new HostingDeployForm();
-    $strategies = $strategy_form->getStrategyLabels();
+    $strategies = HostingDeployForm::getStrategyLabels();
     $this->node->content['info']['field_deployment_strategy']['#markup'] = $strategies[$this->getFieldValue('field_deployment_strategy')];
   }
 
