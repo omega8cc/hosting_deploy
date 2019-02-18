@@ -25,7 +25,15 @@ class HostingPlatformComposerForm extends HostingForm {
     $this->lockFields();
     $this->moveFieldsIntoFieldset('platform_composer', $this->fields);
     $this->form['platform_composer']['#title'] = 'Deploy a Composer Project';
-    $this->form['platform_composer']['#description'] = 'You may deploy this platform from a Composer package.';
+    $this->form['platform_composer']['#description'] = '
+<p>You may deploy this platform from a Composer package hosted on <a href="https://packagist.org/">Packagist</a>, the PHP package repository.</p>
+
+<p>To provision a clean Drupal 8+ core codebase, one would typically enter <em>web</em> for the Docroot, <em>drupal-composer/drupal-project</em> for the Composer Package Name, and <em>8.x-dev</em> for the Composer Package Version.  For more information on that project, see <a href="https://packagist.org/packages/drupal-composer/drupal-project">the project page on Packagist</a>.</p>
+
+<p>However, you will most likely want to customize your installation by starting with this project as template, and then adding contributed and custom modules and themes.  To do that, use the <em>Deploy a Composer project (from source)</em> option instead, which allows you to clone from your own Git repository instead.</p>
+
+<p>It should be noted that this option is not currently working due to <a href="https://www.drupal.org/project/provision/issues/2953349">Including Drush 9 in a Composer-based platform breaks Provision\'s Verify</a>.  Use the <em>Deploy a Composer project (from source)</em> option as a workaround until the issue is resolved.</p>
+    ';
     $this->addSubmitHandler('hosting_platform_composer_platform_submit');
   }
 
