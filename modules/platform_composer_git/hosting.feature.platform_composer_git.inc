@@ -9,8 +9,8 @@
  */
 function hosting_platform_composer_git_hosting_feature() {
   $features['platform_composer_git'] = array(
-    'title' => t('Composer Deploy (from source)'),
-    'description' => t('Deploy platforms using Composer.'),
+    'title' => t('Composer Deploy via Git'),
+    'description' => t('Deploy Composer-based platforms from Git repositories.'),
     'status' => HOSTING_FEATURE_DISABLED,
     'module' => 'hosting_platform_composer_git',
     'group' => 'experimental',

@@ -24,7 +24,7 @@ class HostingPlatformComposerGitForm extends HostingForm {
     $this->disableField('field_composer_git_path');
     $this->lockFields();
     $this->moveFieldsIntoFieldset('platform_composer_git', $this->fields);
-    $this->form['platform_composer_git']['#title'] = 'Deploy a Composer Project (from source)';
+    $this->form['platform_composer_git']['#title'] = 'Deploy a Composer project from a Git repository';
     $this->form['platform_composer_git']['#description'] = '
 <p>You may deploy this platform from a Composer project Git URL.</p>
 
