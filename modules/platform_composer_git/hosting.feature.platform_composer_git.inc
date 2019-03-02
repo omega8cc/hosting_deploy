@@ -13,7 +13,7 @@ function hosting_platform_composer_git_hosting_feature() {
     'description' => t('Deploy Composer-based platforms from Git repositories.'),
     'status' => HOSTING_FEATURE_DISABLED,
     'module' => 'hosting_platform_composer_git',
-    'group' => 'experimental',
+    'group' => 'optional',
   );
 
   return $features;

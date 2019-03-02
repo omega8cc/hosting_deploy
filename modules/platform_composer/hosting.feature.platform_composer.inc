@@ -13,7 +13,7 @@ function hosting_platform_composer_hosting_feature() {
     'description' => t('Deploy Composer-based platforms from Packagist repositories.'),
     'status' => HOSTING_FEATURE_DISABLED,
     'module' => 'hosting_platform_composer',
-    'group' => 'experimental',
+    'group' => 'optional',
   );
 
   return $features;
