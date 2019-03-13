@@ -73,7 +73,7 @@ function hosting_platform_composer_git_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_composer_git_project_url',
-    'label' => 'Composer project (git repository) URL',
+    'label' => 'Git URL',
     'required' => 0,
     'settings' => array(
       'text_processing' => 0,
@@ -113,7 +113,7 @@ function hosting_platform_composer_git_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_composer_git_path',
-    'label' => 'Composer project path',
+    'label' => 'Path',
     'required' => 0,
     'settings' => array(
       'text_processing' => 0,
@@ -153,7 +153,7 @@ function hosting_platform_composer_git_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_composer_git_version',
-    'label' => 'Composer project branch/tag',
+    'label' => 'Branch/tag',
     'required' => 0,
     'settings' => array(
       'text_processing' => 0,
@@ -174,11 +174,11 @@ function hosting_platform_composer_git_field_default_field_instances() {
   // Included for use with string extractors like potx.
   t('For Composer projects, Drupal resides in a sub-directory. Specify it here. Common values include: `docroot`, `html` and `web`.');
   t('Docroot');
-  t('Composer project (git repository) URL');
+  t('Git URL');
   t('The Git repository URL of the project to be installed.');
-  t('Composer project path');
+  t('Path');
   t('Optionally specify the version of the package. Defaults to the latest');
-  t('Composer project branch/tag');
+  t('Branch/tag');
 
   return $field_instances;
 }

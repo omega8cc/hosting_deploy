@@ -73,7 +73,7 @@ function hosting_platform_composer_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_composer_project_package',
-    'label' => 'Composer package name',
+    'label' => 'Repository name',
     'required' => 0,
     'settings' => array(
       'text_processing' => 0,
@@ -113,7 +113,7 @@ function hosting_platform_composer_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_composer_project_path',
-    'label' => 'Composer project path',
+    'label' => 'Path',
     'required' => 0,
     'settings' => array(
       'text_processing' => 0,
@@ -153,7 +153,7 @@ function hosting_platform_composer_field_default_field_instances() {
     ),
     'entity_type' => 'node',
     'field_name' => 'field_composer_project_version',
-    'label' => 'Composer package version',
+    'label' => 'Version',
     'required' => 0,
     'settings' => array(
       'text_processing' => 0,
@@ -174,11 +174,11 @@ function hosting_platform_composer_field_default_field_instances() {
   // Included for use with string extractors like potx.
   t('For Composer projects, Drupal resides in a sub-directory. Specify it here. Common values include: `docroot`, `html` and `web`.');
   t('Docroot');
-  t('Composer package name');
-  t('Composer project path');
+  t('Repository name');
+  t('Path');
   t('The package name to be installed.');
   t('Optionally specify the version of the package. Defaults to the latest');
-  t('Composer package version');
+  t('Version');
 
   return $field_instances;
 }
