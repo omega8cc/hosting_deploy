@@ -45,7 +45,7 @@ class Provision_ComposerCreateProject extends Provision_ShellCommand {
   }
 
   protected function buildCreateProjectCommand() {
-    $command = 'composer create-project --no-interaction --no-progress';
+    $command = 'composer create-project --no-dev --no-interaction --no-progress';
     $command .= ' ' . escapeshellarg(trim($this->package));
     $command .= ' ' . escapeshellarg(trim($this->path));
     $command .= ' ' . escapeshellarg(trim($this->version));
