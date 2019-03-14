@@ -15,11 +15,14 @@
 function drush_platform_composer_provision_verify_validate() {
   if (d()->type == 'platform' && d()->composer_project_package) {
     $platform = new Provision_ComposerCreateProject();
-    return $platform->validateProvisionVerify();
+    $success = $platform->validateProvisionVerify();
+    if (!$success) {
+      $platform->postProvisionDelete();
+    }
   }
 }
 
- /**
+/**
  * Implements drush_HOOK_post_COMMAND() for provision-delete command.
  *
  * If repository path is different from root, delete it too.
