@@ -28,11 +28,11 @@ class HostingPlatformComposerForm extends HostingForm {
     $this->form['platform_composer']['#description'] = '
 <p>You may deploy this platform from a Composer package hosted on <a href="https://packagist.org/">Packagist</a>, the PHP package repository.</p>
 
-<p>To provision a clean Drupal 8+ core codebase, one would typically enter <em>web</em> for the Docroot, <em>drupal-composer/drupal-project</em> for the Composer Package Name, and <em>8.x-dev</em> for the Composer Package Version.  For more information on that project, see <a href="https://packagist.org/packages/drupal-composer/drupal-project">the project page on Packagist</a>.</p>
+<p>To provision a clean Drupal 8+ core codebase for Aegir, one would typically enter <em>web</em> for the Docroot, <em>aegir/drupal-project-composer</em> for the Composer Package Name, and <em>dev-aegir3-8.x</em> for the Composer Package Version.  For more information on that project, see <a href="https://packagist.org/packages/aegir/drupal-project-composer">the project page on Packagist</a>.</p>
 
-<p>However, you will most likely want to customize your installation by starting with this project as template, and then adding contributed and custom modules and themes.  To do that, use the <em>Deploy a Composer project from a Git repository</em> option instead, which allows you to clone from your own Git repository instead.</p>
+<p>However, you will probably want to customize your installation after starting with this project as template, and then adding contributed and custom modules and themes.  To do that, use the <em>Deploy a Composer project from a Git repository</em> option instead, which allows you to clone from your own Git repository (once you\'ve created it).</p>
 
-<p>It should be noted that this option is not currently working with repositories requiring Drush 9 due to <a href="https://www.drupal.org/project/provision/issues/2953349">Including Drush 9 in a Composer-based platform breaks Provision\'s Verify</a>.  Either fork the repository and remove the requirement (or move it to <em>require-dev</em>), or do this in your own Git repository using the <em>Deploy a Composer project from a Git repository</em> option instead of this one.</p>
+<p>It should be noted that this option is not currently working with repositories requiring Drush 9 due to <a href="https://www.drupal.org/project/provision/issues/2953349">Including Drush 9 in a Composer-based platform breaks Provision\'s Verify</a>.  Either fork the repository and remove the requirement (or move it to <em>require-dev</em> as the suggested-above repository does), or do this in your own Git repository using the <em>Deploy a Composer project from a Git repository</em> option instead of this one.</p>
     ';
     $this->addSubmitHandler('hosting_platform_composer_platform_submit');
   }
