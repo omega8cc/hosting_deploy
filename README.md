@@ -27,6 +27,8 @@ This option is for provisioning a Composer-based platform from [Packagist](https
 
 Select the *Deploy a Composer project from a Packagist repository* option, fill in details, and then submit the form.
 
+**Note:** This activity will recalculate all dependencies, and thus, it is very resource-intensive. It requires a miminum of 4G of RAM; we advise against performing this activity in production.
+
 ### Deploy a Composer project from a Git repository
 
 This option is for provisioning a Composer-based platform from a Git repository, where your (presumably) custom `composer.json` is maintained.

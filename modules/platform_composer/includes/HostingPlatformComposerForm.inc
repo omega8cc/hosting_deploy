@@ -33,6 +33,8 @@ class HostingPlatformComposerForm extends HostingForm {
 <p>However, you will probably want to customize your installation after starting with this project as template, and then adding contributed and custom modules and themes.  To do that, use the <em>Deploy a Composer project from a Git repository</em> option instead, which allows you to clone from your own Git repository (once you\'ve created it).</p>
 
 <p>It should be noted that this option is not currently working with repositories requiring Drush 9 due to <a href="https://www.drupal.org/project/provision/issues/2953349">Including Drush 9 in a Composer-based platform breaks Provision\'s Verify</a>.  Either fork the repository and remove the requirement (or move it to <em>require-dev</em> as the suggested-above repository does), or do this in your own Git repository using the <em>Deploy a Composer project from a Git repository</em> option instead of this one.</p>
+
+<p><strong>Note:</strong> This activity will recalculate all dependencies, and thus, it is very resource-intensive. It requires a miminum of 4G of RAM; we advise against performing this activity in production.</p>
     ';
     $this->addSubmitHandler('hosting_platform_composer_platform_submit');
   }
