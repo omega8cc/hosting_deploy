@@ -6,9 +6,7 @@ This module improves the UI for selecting the Aegir platform deployment strategy
 Installation
 ------------
 
-1. Install as any other Drupal module into your hostmaster site.
-    * `drush @hostmaster pm-download hosting_deploy --destination=$(drush dd @hm:%site)/modules/contrib -y`
-2. Enable by going to `/admin/hosting`.
+As this module ships with core Aegir, and is included in [Golden Contrib](https://docs.aegirproject.org/develop/repositories/#golden-contrib), simply navigate to *Hosting » Aegir Deployment*, and ensure that at least one of those modules is enabled.  They're all submodules that depend on this one.
 
 Using it
 --------
