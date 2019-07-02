@@ -30,11 +30,7 @@ class HostingPlatformComposerGitForm extends HostingForm {
 
 <p>You\'ll need a Git repository started with something like the following:</p>
 
-<p><code>composer create-project drupal-composer/drupal-project:8.x-dev new-drupal-project --stability dev --no-interaction</code></p>
-
-<p>Note that until <a href="https://www.drupal.org/project/provision/issues/2953349">Including Drush 9 in a Composer-based platform breaks Provision\'s verify</a> is resolved, the Drush dependency must be moved to the development section of the makefile in order for the build to work properly within Aegir.  So you\'ll need to either move it from the <em>require</em> section to the <em>require-dev</em> section manually, or run a command like this:</p>
-
-<p><code>composer require --dev \'drush/drush:^9.0.0\'</code></p>
+<p><code>composer create-project vardot/varbase-project:8.6.x-dev my_varbase --no-dev --no-interaction</code></p>
     ';
     $this->addSubmitHandler('hosting_platform_composer_git_platform_submit');
   }
