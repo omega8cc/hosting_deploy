@@ -19,7 +19,7 @@ function hosting_deploy_field_default_field_instances() {
       ),
     ),
     'deleted' => 0,
-    'description' => 'Choose the mechanism by which to deploy this platform.',
+    'description' => 'Choose the mechanism by which to deploy this platform. For additional information and mechanisms, see <a href="https://docs.aegirproject.org/usage/advanced/deployment/">Deployment Strategies</a>.',
     'display' => array(
       'default' => array(
         'label' => 'above',
@@ -53,7 +53,7 @@ function hosting_deploy_field_default_field_instances() {
 
   // Translatables
   // Included for use with string extractors like potx.
-  t('Choose the mechanism by which to deploy this platform.');
+  t('Choose the mechanism by which to deploy this platform. For additional information and mechanisms, see <a href="https://docs.aegirproject.org/usage/advanced/deployment/">Deployment Strategies</a>.');
   t('Deployment strategy');
 
   return $field_instances;
