@@ -15,7 +15,7 @@ function hosting_deploy_field_default_field_instances() {
     'bundle' => 'platform',
     'default_value' => array(
       0 => array(
-        'value' => 'frommakefile',
+        'value' => 'none',
       ),
     ),
     'deleted' => 0,
