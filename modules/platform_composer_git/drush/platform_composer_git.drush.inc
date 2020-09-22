@@ -71,3 +71,38 @@ function platform_composer_git_provision_services() {
   platform_composer_git_register_autoload();
   return array('platform_composer_git' => NULL);
 }
+
+/**
+ * Implements hook_provision_platform_sync_path_alter().
+ *
+ * Changes the sync_path to ensure that composer-built platforms get all of the
+ * code moved to remote servers.
+ *
+ * @param $sync_path
+ */
+function platform_composer_git_provision_platform_sync_path_alter(&$sync_path) {
+  switch (d()->type) {
+    case 'site':
+      $composer_git_path = d()->platform->composer_git_path;
+      break;
+    case 'platform':
+      $composer_git_path = d()->composer_git_path;
+      break;
+    default:
+      return;
+  }
+
+  if (!empty($composer_git_path) && !file_exists($composer_git_path)) {
+    return drush_set_error('PROVISION_ERROR',  dt("Platform path '!path' does not exist.", array(
+      '!path' => $composer_git_path,
+    )));
+  }
+
+  if ($composer_git_path == d()->root) {
+    // Nothing to do here.
+    return;
+  }
+
+  $sync_path = $composer_git_path;
+  drush_log(dt('Adjusted sync path to match `@attribute`.', ['@attribute' => 'composer_git_path']), 'info');
+}
