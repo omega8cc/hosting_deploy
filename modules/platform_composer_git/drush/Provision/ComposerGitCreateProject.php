@@ -71,9 +71,8 @@ class Provision_ComposerGitCreateProject extends Provision_ShellCommand {
   }
 
   protected function buildCreateProjectCommand() {
-    $command = 'cd ';
-    $command .= escapeshellarg(trim($this->path));
-    $command .= ' && composer create-project --no-dev --no-interaction --no-progress';
+    $path = escapeshellarg(trim($this->path));
+    $command = "composer install --working-dir=$path --no-dev --no-interaction --no-progress";
     return $command;
   }
 
