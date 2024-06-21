@@ -133,7 +133,11 @@ function hosting_platform_composer_git_field_default_field_instances() {
   // Exported field_instance: 'node-platform-field_composer_git_version'.
   $field_instances['node-platform-field_composer_git_version'] = array(
     'bundle' => 'platform',
-    'default_value' => 'master',
+      'default_value' => array(
+          0 => array(
+              'value' => 'master',
+          ),
+      ),
     'deleted' => 0,
     'description' => 'Optionally specify a Git branch or tag. Defaults to the `master` branch.',
     'display' => array(
