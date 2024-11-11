@@ -16,7 +16,7 @@ class HostingPlatformGitForm extends HostingForm {
   public function __construct(&$form, &$form_state, &$node = FALSE) {
     parent::__construct($form, $form_state, $node);
     if ($this->node->type == 'platform') {
-      $this->platform = new HostingPlatformGitNode($node);
+      $this->platform = new HostingPlatformGitNode($this->node);
     }
   }
 
