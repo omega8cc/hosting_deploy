@@ -22,6 +22,14 @@ function hosting_platform_git_node_insert($node) {
 }
 
 /**
+ * Validate callback for the platform node form.
+ */
+function hosting_platform_git_platform_validate($form, &$form_state) {
+  $platform_node_form = new HostingPlatformGitForm($form, $form_state);
+  $platform_node_form->validate();
+}
+
+/**
  * Submit callback for the platform node form.
  */
 function hosting_platform_git_platform_submit($form, &$form_state) {
