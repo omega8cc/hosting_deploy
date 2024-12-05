@@ -96,7 +96,7 @@ class Provision_PlatformGit extends Provision_ShellCommand {
       drush_set_context('DRUSH_DEBUG', $debug);
       $lines = drush_shell_exec_output();
       foreach ($lines as $line) {
-        $ref = explode('/', $line);
+        $ref = explode('/', $line, 3);
         if (isset($ref[1]) && isset($ref[2])) {
           $this->references[$ref[1]][] = $ref[2];
         }
