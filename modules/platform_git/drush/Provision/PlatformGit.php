@@ -4,7 +4,7 @@
  * The Provision_PlatformGit class.
  */
 
-class Provision_PlatformGit extends Provision_ShellCommand {
+class Provision_PlatformGit extends Provision_DeployCommand {
 
   // The prefix used for properties in Aegir contexts.
   protected $context_prefix = 'git_';
@@ -24,18 +24,20 @@ class Provision_PlatformGit extends Provision_ShellCommand {
   // A list of references fetched from a Git repository.
   protected $references = [];
 
-  public function validateProvisionVerify() {
-    if ($this->pathExists($this->repository_path)) {
-      return $this->notice(dt('Platform Git repository path already exists. Aborting.'));
-    }
-    else {
-      return $this->deployPlatform();
-    }
+  protected function buildPath() {
+    return $this->repository_path;
   }
 
-  protected function deployPlatform() {
-    $this->notice(dt('Deploying platform.'));
-    return $this->gitClone() && $this->gitCheckout();
+  protected function pathExistsMessage() {
+    return dt('Platform Git repository path already exists. Aborting.');
+  }
+
+  protected function checkExistingBuild() {
+    $this->warnOnUnknownReference($this->repository_path, $this->reference);
+  }
+
+  protected function buildSteps() {
+    return ['gitClone', 'gitCheckout'];
   }
 
   protected function gitClone() {
@@ -110,6 +112,7 @@ class Provision_PlatformGit extends Provision_ShellCommand {
       $this->notice(dt('Deleting repo path at: ') . d()->repo_path);
       _provision_recursive_delete($this->repository_path);
     }
+    $this->clearBuildMarker();
   }
 
 }
