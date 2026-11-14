@@ -108,6 +108,9 @@ class Provision_PlatformGit extends Provision_DeployCommand {
   }
 
   public function postProvisionDelete() {
+    if ($this->removeUnfinishedLeftover('git_repository_path')) {
+      return;
+    }
     if ($this->repository_path != d()->root) {
       $this->notice(dt('Deleting repo path at: ') . d()->repo_path);
       _provision_recursive_delete($this->repository_path);

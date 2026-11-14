@@ -106,7 +106,10 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    * missing or empty, and the folder is the owner's code afterwards.
    */
   protected function buildMarker() {
-    $path = $this->cleanPath();
+    return $this->markerFor($this->cleanPath());
+  }
+
+  protected function markerFor($path) {
     if ($path === '' || $path[0] !== '/' || basename($path) === '') {
       return FALSE;
     }
@@ -160,6 +163,48 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     if ($path !== '' && !file_exists($path) && !is_link($path)) {
       $this->clearBuildMarker();
     }
+  }
+
+  /**
+   * After the Delete of a platform with no codebase: this build's own leftover.
+   *
+   * The backend removes nothing on disk for such a platform and keeps the
+   * build path from the usual removal, because nothing verified what stands
+   * there: a mistyped Platform Path can name a folder that holds anything.
+   * One thing is known to be this build's, the folder beside the marker of a
+   * build that never finished. That folder and its marker go; whatever else
+   * is there stays.
+   *
+   * @param string $property
+   *   The context property that holds this strategy's build path.
+   *
+   * @return bool
+   *   TRUE when the backend flagged such a Delete, whatever was done here.
+   */
+  protected function removeUnfinishedLeftover($property) {
+    $kept = drush_get_context('PROVISION_NO_CODEBASE_DEPLOY_PATHS', NULL);
+    if (!is_array($kept)) {
+      return FALSE;
+    }
+    if (empty($kept[$property]) || !is_string($kept[$property])) {
+      return TRUE;
+    }
+    $path = rtrim(trim($kept[$property]), '/');
+    $marker = $this->markerFor($path);
+    if ($marker && is_file($marker)) {
+      if ($this->pathIsRemovable($path) && (file_exists($path) || is_link($path))) {
+        $this->notice(dt('Removing the folder an unfinished build left at `:path`.', [':path' => $path]));
+        _provision_recursive_delete($path);
+        clearstatcache();
+      }
+      if (!file_exists($path) && !is_link($path)) {
+        @unlink($marker);
+      }
+    }
+    elseif (file_exists($path) || is_link($path)) {
+      $this->notice(dt('The folder at `:path` is left as it is: nothing says a build of this platform made it.', [':path' => $path]));
+    }
+    return TRUE;
   }
 
   /**

@@ -53,6 +53,9 @@ class Provision_ComposerCreateProject extends Provision_DeployCommand {
   }
 
   public function postProvisionDelete() {
+    if ($this->removeUnfinishedLeftover('composer_project_path')) {
+      return;
+    }
     if ($this->path != d()->root) {
       $this->notice(dt('Deleting Composer project path at: ') . d()->composer_project_path);
       _provision_recursive_delete($this->path);
