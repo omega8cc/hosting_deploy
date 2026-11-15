@@ -48,8 +48,27 @@ class HostingPlatformComposerGitForm extends HostingForm {
   }
 
   public function submit() {
+    if (!$this->savedWithThisStrategy()) {
+      return;
+    }
     $this->setProjectPath();
     $this->setPublishPath();
+  }
+
+  /**
+   * Whether the platform is saved with this strategy.
+   *
+   * Every strategy's handler runs on every platform save, and its fields
+   * are submitted, hidden or not, whatever the strategy: only this
+   * strategy's own save sets the build folder and the Platform Path from
+   * them. Where the form carries no strategy, the handler runs as it did.
+   */
+  protected function savedWithThisStrategy() {
+    $lang = $this->language();
+    if (!isset($this->form_state['values']['field_deployment_strategy'][$lang][0]['value'])) {
+      return TRUE;
+    }
+    return $this->form_state['values']['field_deployment_strategy'][$lang][0]['value'] === 'platform_composer_git';
   }
 
   protected function setProjectPath() {
