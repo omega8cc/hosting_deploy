@@ -13,7 +13,8 @@
  * A build that was cut off before it could do so leaves a marker file beside
  * its folder, and a later Verify refuses that folder by name. A build whose
  * folder the backend user cannot write is refused before its first step,
- * with the folder, its owner and its mode named.
+ * with the folder, its owner and its mode named, and so is a build with no
+ * full path.
  */
 class Provision_DeployCommand extends Provision_ShellCommand {
 
@@ -78,6 +79,13 @@ class Provision_DeployCommand extends Provision_ShellCommand {
   protected function deployPlatform() {
     $this->notice(dt('Deploying platform.'));
     $path = $this->cleanPath();
+    if ($path === '' || $path[0] !== '/') {
+      // A build tool handed an empty or relative target makes its project
+      // in the working directory, not in the platform's folder.
+      return $this->buildError('PLATFORM_BUILD_NO_PATH', dt('This platform has no full path for its build (`:path`), so nothing is built. Delete this platform and add it again.', [
+        ':path' => $path,
+      ]));
+    }
     if (!$this->checkBuildFolder($path)) {
       return FALSE;
     }
