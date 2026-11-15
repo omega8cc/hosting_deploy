@@ -11,7 +11,9 @@
  * then removes the folder it made in this run, and only that folder, so the
  * next Verify builds again instead of taking the leftover for the platform.
  * A build that was cut off before it could do so leaves a marker file beside
- * its folder, and a later Verify refuses that folder by name.
+ * its folder, and a later Verify refuses that folder by name. A build whose
+ * folder the backend user cannot write is refused before its first step,
+ * with the folder, its owner and its mode named.
  */
 class Provision_DeployCommand extends Provision_ShellCommand {
 
@@ -76,6 +78,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
   protected function deployPlatform() {
     $this->notice(dt('Deploying platform.'));
     $path = $this->cleanPath();
+    if (!$this->checkBuildFolder($path)) {
+      return FALSE;
+    }
     $this->made_path = ($path !== '' && !file_exists($path) && !is_link($path));
     $this->markBuildStarted();
     $this->announceBuild();
@@ -97,6 +102,92 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    */
   protected function cleanPath() {
     return rtrim(trim((string) $this->buildPath()), '/');
+  }
+
+  /**
+   * Refuse a build into a folder the backend user cannot write.
+   *
+   * The build runs as the backend user, and its first step makes the build
+   * path inside the nearest folder that already stands above it. Where that
+   * folder does not let this user write, each build tool stops with a line
+   * of its own that names neither the folder nor the cause, so the task says
+   * both here, before anything is made. The account's logins make folders
+   * group writable; one unpacked from an archive, uploaded with its own
+   * modes or made before the logins did so may not be.
+   */
+  protected function checkBuildFolder($path) {
+    if ($path === '' || $path[0] !== '/') {
+      return TRUE;
+    }
+    clearstatcache();
+    $folder = dirname($path);
+    while ($folder !== '/' && !file_exists($folder) && !is_link($folder)) {
+      $folder = dirname($folder);
+    }
+    if (!is_dir($folder) || is_writable($folder)) {
+      return TRUE;
+    }
+    return $this->buildError('PLATFORM_BUILD_FOLDER_NOT_WRITABLE', $this->folderMessage($path, $folder));
+  }
+
+  /**
+   * What stops the build in that folder, and what its owner can do.
+   */
+  protected function folderMessage($path, $folder) {
+    $uid = @fileowner($folder);
+    $gid = @filegroup($folder);
+    $perms = @fileperms($folder);
+    $args = [
+      ':path' => $path,
+      ':folder' => $folder,
+      ':owner' => $this->idName($uid, FALSE),
+      ':group' => $this->idName($gid, TRUE),
+      ':mode' => ($perms === FALSE) ? '?' : substr(sprintf('%o', $perms), -4),
+    ];
+    if (!function_exists('posix_geteuid')) {
+      $text = 'The build cannot make `:path`: the backend user that runs it cannot write in `:folder`, which belongs to `:owner`, group `:group`, mode :mode.';
+      $text .= ' Its owner can give it group write with `chmod g+w :folder`, then run Verify again.';
+      return dt($text, $args);
+    }
+    $euid = posix_geteuid();
+    $groups = posix_getgroups();
+    if (!is_array($groups)) {
+      $groups = [];
+    }
+    $groups[] = posix_getegid();
+    $args[':user'] = $this->idName($euid, FALSE);
+    $text = 'The build cannot make `:path`: the backend user `:user` that runs it cannot write in `:folder`, which belongs to `:owner`, group `:group`, mode :mode.';
+    if ($uid !== 0 && $uid !== $euid && in_array($gid, $groups, TRUE)) {
+      // A login's folder in the backend user's group: group write is all
+      // it lacks, and its owner can give it.
+      $text .= ' Log in as `:owner` and give it group write with `chmod g+w :folder`, then run Verify again.';
+    }
+    else {
+      // Root's folder, the backend user's own, or one in a group the backend
+      // user is not in: no login of the account can open it to the build.
+      $text .= ' Delete this platform and add it again with a Platform Path in a folder your account\'s login has made: such a folder is group writable.';
+    }
+    return dt($text, $args);
+  }
+
+  /**
+   * A user or group name, or its number where the system has no name for it.
+   */
+  protected function idName($id, $group) {
+    if (!is_int($id)) {
+      return '?';
+    }
+    $row = FALSE;
+    if ($group && function_exists('posix_getgrgid')) {
+      $row = posix_getgrgid($id);
+    }
+    elseif (!$group && function_exists('posix_getpwuid')) {
+      $row = posix_getpwuid($id);
+    }
+    if (is_array($row) && isset($row['name']) && $row['name'] !== '') {
+      return $row['name'];
+    }
+    return (string) $id;
   }
 
   /**
