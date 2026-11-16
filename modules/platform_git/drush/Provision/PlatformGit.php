@@ -32,7 +32,7 @@ class Provision_PlatformGit extends Provision_DeployCommand {
   }
 
   protected function pathExistsMessage() {
-    return dt('Platform Git repository path already exists. Aborting.');
+    return dt('Platform Git repository path already exists: nothing is built, the code there is used.');
   }
 
   protected function checkExistingBuild() {

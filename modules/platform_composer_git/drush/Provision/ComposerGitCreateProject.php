@@ -29,7 +29,7 @@ class Provision_ComposerGitCreateProject extends Provision_DeployCommand {
   }
 
   protected function pathExistsMessage() {
-    return dt('Composer project path already exists. Aborting.');
+    return dt('Composer project path already exists: nothing is built, the code there is used.');
   }
 
   protected function checkExistingBuild() {

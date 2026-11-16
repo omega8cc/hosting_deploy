@@ -46,7 +46,7 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    * What to say when the folder is already there.
    */
   protected function pathExistsMessage() {
-    return dt('Platform path already exists. Aborting.');
+    return dt('Platform path already exists: nothing is built, the code there is used.');
   }
 
   /**
