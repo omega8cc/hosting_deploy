@@ -25,10 +25,54 @@ class HostingDeployForm extends HostingForm {
     $this->keepBuildStrategy();
     $this->keepBuildPath();
     $this->addGitHelp();
+    $this->addSubmitHandler('hosting_deploy_platform_submit');
 
     // TODO: Add a validator to ensure required fields for a given strategy are
-    // provided. Add a submit handler to clear out values from other
-    // strategies' fields?
+    // provided.
+  }
+
+  /**
+   * Keep only the build fields of the strategy a platform is saved with.
+   *
+   * The form sends every build strategy's fields, shown or not, and the
+   * backend runs every build whose fields reach it: a field of another build
+   * sent with a save would make the next Verify run that build too. So a
+   * save empties, for every build but the platform's own, the fields a
+   * request can set. The build folders, which no request sets, are kept: a
+   * Delete reads them. A platform that verified is left as it is, its fields
+   * locked, and so is one saved before its strategy was stored, whose
+   * strategy is read from the fields that are set.
+   */
+  public function submit() {
+    $lang = $this->language();
+    if (!isset($this->form_state['values']['field_deployment_strategy'][$lang][0]['value'])) {
+      return;
+    }
+    if (!$this->isANewNode()) {
+      if (!isset($this->node->platform_status) || $this->node->platform_status != HOSTING_PLATFORM_QUEUED) {
+        return;
+      }
+      if (empty($this->platform->getFieldValue('field_deployment_strategy'))) {
+        return;
+      }
+    }
+    $own = $this->form_state['values']['field_deployment_strategy'][$lang][0]['value'];
+    foreach (self::getBuildStrategies() as $name) {
+      // Each strategy keeps its fields in a fieldset of its own name.
+      if ($name === $own || !isset($this->form[$name])) {
+        continue;
+      }
+      foreach (element_children($this->form[$name]) as $field) {
+        $element = $this->form[$name][$field];
+        if (!$this->isAField($field) || !isset($this->form_state['values'][$field])) {
+          continue;
+        }
+        if ((isset($element['#access']) && !$element['#access']) || !empty($element['#disabled'])) {
+          continue;
+        }
+        $this->form_state['values'][$field] = [$lang => []];
+      }
+    }
   }
 
   /**
