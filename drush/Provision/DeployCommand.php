@@ -14,7 +14,8 @@
  * its folder, and a later Verify refuses that folder by name. A build whose
  * folder the backend user cannot write is refused before its first step,
  * with the folder, its owner and its mode named, and so is a build with no
- * full path.
+ * full path. A build whose code needs a newer PHP than the Verify runs on is
+ * kept, and the Verify stops with that PHP named.
  */
 class Provision_DeployCommand extends Provision_ShellCommand {
 
@@ -73,7 +74,41 @@ class Provision_DeployCommand extends Provision_ShellCommand {
       $this->checkExistingBuild();
       return TRUE;
     }
-    return $this->deployPlatform();
+    if ($this->deployPlatform() !== TRUE) {
+      return FALSE;
+    }
+    return $this->checkBuildPhp($path);
+  }
+
+  /**
+   * Stop a Verify whose PHP cannot run the code it has just built.
+   *
+   * The shell wrapper picks a task's PHP for the platform's code when the
+   * task starts, and refuses code that cannot run on it. The Verify that
+   * builds the platform starts before that code is there, and loading it on
+   * an older PHP throws in Composer's platform check. Composer records the
+   * code's lowest PHP in that check, so it is read here, as the wrapper reads
+   * it: the build is kept, and the task says which PHP the code needs and
+   * where to name it.
+   */
+  protected function checkBuildPhp($path) {
+    $file = $path . '/vendor/composer/platform_check.php';
+    if (!is_file($file) || !is_readable($file)) {
+      return TRUE;
+    }
+    $text = @file_get_contents($file, FALSE, NULL, 0, 16384);
+    if (!is_string($text) || !preg_match('/PHP_VERSION_ID\s*>=\s*([0-9]{5})/', $text, $m)) {
+      return TRUE;
+    }
+    $floor = (int) $m[1];
+    if (PHP_VERSION_ID >= $floor) {
+      return TRUE;
+    }
+    return $this->buildError('PLATFORM_BUILD_PHP_TOO_OLD', dt('The build at `:path` is done and kept, but this Verify runs PHP :php and the code needs PHP :need or newer (vendor/composer/platform_check.php). Name PHP :need or newer for this platform in ~/static/control/cli-per-platform.info, then run Verify again. BOA adds such a line by itself within a few minutes where an installed PHP can run the code.', [
+      ':path' => $path,
+      ':php' => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION,
+      ':need' => intval($floor / 10000) . '.' . intval(($floor % 10000) / 100),
+    ]));
   }
 
   protected function deployPlatform() {
