@@ -4,7 +4,7 @@
  * The Provision_PlatformGit class.
  */
 
-class Provision_PlatformGit extends Provision_ShellCommand {
+class Provision_PlatformGit extends Provision_DeployCommand {
 
   // The prefix used for properties in Aegir contexts.
   protected $context_prefix = 'git_';
@@ -24,18 +24,23 @@ class Provision_PlatformGit extends Provision_ShellCommand {
   // A list of references fetched from a Git repository.
   protected $references = [];
 
-  public function validateProvisionVerify() {
-    if ($this->pathExists($this->repository_path)) {
-      return $this->notice(dt('Platform Git repository path already exists. Aborting.'));
-    }
-    else {
-      return $this->deployPlatform();
-    }
+  // Whether the repository's references were read in this run.
+  protected $scanned = FALSE;
+
+  protected function buildPath() {
+    return $this->repository_path;
   }
 
-  protected function deployPlatform() {
-    $this->notice(dt('Deploying platform.'));
-    return $this->gitClone() && $this->gitCheckout();
+  protected function pathExistsMessage() {
+    return dt('Platform Git repository path already exists: nothing is built, the code there is used.');
+  }
+
+  protected function checkExistingBuild() {
+    $this->warnOnUnknownReference($this->repository_path, $this->reference);
+  }
+
+  protected function buildSteps() {
+    return ['gitClone', 'gitCheckout'];
   }
 
   protected function gitClone() {
@@ -87,29 +92,47 @@ class Provision_PlatformGit extends Provision_ShellCommand {
     return $this->reference && !$this->referenceIsABranch() && !$this->referenceIsATag();
   }
 
+  /**
+   * The repository's branches ('heads') or tags, read once.
+   *
+   * A kind the repository has none of, or a repository that cannot be read,
+   * is an empty list: in_array() on a missing list is a fatal error on PHP 8.
+   * The clone then fails with the repository's own error where it cannot be
+   * reached.
+   */
   protected function lsRemote($type = FALSE) {
-    if (empty($this->references)) {
+    if (!$this->scanned) {
+      $this->scanned = TRUE;
+      $this->references = ['heads' => [], 'tags' => []];
       $this->notice(dt('Scanning remote git repository tags and branches.'));
       $debug = drush_get_context('DRUSH_DEBUG');
       drush_set_context('DRUSH_DEBUG', FALSE);
-      drush_shell_exec('git ls-remote ' . escapeshellarg(trim($this->repository_url)));
+      $read = drush_shell_exec('git ls-remote ' . escapeshellarg(trim($this->repository_url)));
       drush_set_context('DRUSH_DEBUG', $debug);
-      $lines = drush_shell_exec_output();
-      foreach ($lines as $line) {
-        $ref = explode('/', $line, 3);
-        if (isset($ref[1]) && isset($ref[2])) {
-          $this->references[$ref[1]][] = $ref[2];
+      if ($read) {
+        foreach (drush_shell_exec_output() as $line) {
+          $ref = explode('/', $line, 3);
+          if (isset($ref[1]) && isset($ref[2])) {
+            $this->references[$ref[1]][] = $ref[2];
+          }
         }
       }
     }
-    return $type ? $this->references[$type] : $this->references;
+    if (!$type) {
+      return $this->references;
+    }
+    return isset($this->references[$type]) ? $this->references[$type] : [];
   }
 
   public function postProvisionDelete() {
+    if ($this->removeUnfinishedLeftover('git_repository_path')) {
+      return;
+    }
     if ($this->repository_path != d()->root) {
       $this->notice(dt('Deleting repo path at: ') . d()->repo_path);
       _provision_recursive_delete($this->repository_path);
     }
+    $this->clearBuildMarker();
   }
 
 }

@@ -4,7 +4,7 @@
  * The Provision_ComposerGitCreateProject class.
  */
 
-class Provision_ComposerGitCreateProject extends Provision_ShellCommand {
+class Provision_ComposerGitCreateProject extends Provision_DeployCommand {
 
   // The prefix used for properties in Aegir contexts.
   protected $context_prefix = 'composer_git_';
@@ -15,43 +15,49 @@ class Provision_ComposerGitCreateProject extends Provision_ShellCommand {
   // The local path in which we'll deploy the project.
   protected $path = FALSE;
 
+  // The Git URL of the Composer project to clone.
+  protected $project_url = FALSE;
+
   // The Composer package to use to create the project.
   protected $package = FALSE;
 
-  // The version of the Composer package to use.
+  // The branch or tag of the repository to check out.
   protected $version = FALSE;
 
-  public function validateProvisionVerify() {
-    if ($this->pathExists($this->path)) {
-      return $this->notice(dt('Composer project path already exists. Aborting.'));
-    }
-    else {
-      return $this->deployPlatform();
-    }
+  protected function buildPath() {
+    return $this->path;
   }
 
-  protected function deployPlatform() {
-    $this->notice(dt('Deploying platform.'));
-    return $this->createProject();
+  protected function pathExistsMessage() {
+    return dt('Composer project path already exists: nothing is built, the code there is used.');
   }
 
-  protected function createProject() {
+  protected function checkExistingBuild() {
+    $this->warnOnUnknownReference($this->path, $this->version);
+  }
+
+  protected function announceBuild() {
     $this->notice(dt('Creating `:version` version of project from `:project_url` at `:path`', [
       ':version' => $this->version,
       ':project_url' => $this->project_url,
       ':path' => $this->path,
     ]));
+  }
 
-    $commands = [
-      $this->buildCloneProjectCommand(),
-      $this->buildCheckoutVersionCommand(),
-      $this->buildCreateProjectCommand(),
-    ];
+  protected function buildSteps() {
+    return ['cloneProject', 'checkoutVersion', 'installProject'];
+  }
 
-    foreach ($commands as $command) {
-      $result = $this->execCommand($command);
-    }
-    return $result;
+  protected function cloneProject() {
+    return $this->execCommand($this->buildCloneProjectCommand());
+  }
+
+  protected function checkoutVersion() {
+    return $this->execCommand($this->buildCheckoutVersionCommand());
+  }
+
+  protected function installProject() {
+    return $this->execCommand($this->buildCreateProjectCommand());
   }
 
   protected function buildCloneProjectCommand() {
@@ -77,10 +83,14 @@ class Provision_ComposerGitCreateProject extends Provision_ShellCommand {
   }
 
   public function postProvisionDelete() {
+    if ($this->removeUnfinishedLeftover('composer_git_path')) {
+      return;
+    }
     if ($this->path != d()->root) {
       $this->notice(dt('Deleting Composer project path at: ') . d()->composer_git_path);
       _provision_recursive_delete($this->path);
     }
+    $this->clearBuildMarker();
   }
 
 }

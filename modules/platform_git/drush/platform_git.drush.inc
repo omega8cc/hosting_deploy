@@ -46,6 +46,8 @@ function platform_git_register_autoload() {
   if (!$loaded) {
     $loaded = TRUE;
     provision_autoload_register_prefix('Provision_', dirname(__FILE__));
+    // The build class the strategies of this project share.
+    provision_autoload_register_prefix('Provision_', dirname(dirname(dirname(dirname(__FILE__)))) . '/drush');
   }
 }
 

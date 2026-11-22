@@ -26,15 +26,13 @@ class HostingPlatformComposerForm extends HostingForm {
     $this->moveFieldsIntoFieldset('platform_composer', $this->fields);
     $this->form['platform_composer']['#title'] = 'Deploy a Composer project from a Packagist repository';
     $this->form['platform_composer']['#description'] = '
-<p>You may deploy this platform from a Composer package hosted on <a href="https://packagist.org/">Packagist</a>, the PHP package repository.</p>
+<p>Builds this platform from a package published on <a href="https://packagist.org/">Packagist</a>, the PHP package repository. The first Verify runs <code>composer create-project --no-dev</code> for the <em>Repository name</em> at the <em>Version</em>, into the Platform Path, which must be a folder that does not exist yet.</p>
 
-<p>To provision a clean Drupal 8+ core codebase for Aegir, one would typically enter <em>web</em> for the Docroot, <em>aegir/drupal-project-composer</em> for the Composer Package Name, and <em>dev-aegir3-8.x</em> for the Composer Package Version.  For more information on that project, see <a href="https://packagist.org/packages/aegir/drupal-project-composer">the project page on Packagist</a>.</p>
+<p>For Drupal core alone, enter <em>drupal/recommended-project</em> as the Repository name, a constraint such as <em>~11.4.0</em> as the Version and <em>web</em> as the Docroot. A package builds exactly as it was published, so a site that uses contributed modules needs a codebase that lists them: build that one from your own repository with <em>Deploy a Composer project from a Git repository</em>.</p>
 
-<p>However, you will probably want to customize your installation after starting with this project as template, and then adding contributed and custom modules and themes.  To do that, use the <em>Deploy a Composer project from a Git repository</em> option instead, which allows you to clone from your own Git repository (once you\'ve created it).</p>
+<p>Where the package brings no Drush, the first Verify adds it. A build that fails removes what it made and fails the Verify. Correct the fields and run Verify again.</p>
 
-<p>It should be noted that this option is not currently working with repositories requiring Drush 9 due to <a href="https://www.drupal.org/project/provision/issues/2953349">Including Drush 9 in a Composer-based platform breaks Provision\'s Verify</a>.  Either fork the repository and remove the requirement (or move it to <em>require-dev</em> as the suggested-above repository does), or do this in your own Git repository using the <em>Deploy a Composer project from a Git repository</em> option instead of this one.</p>
-
-<p><strong>Note:</strong> This activity will recalculate all dependencies, and thus, it is very resource-intensive. It requires a miminum of 4G of RAM; we advise against performing this activity in production.</p>
+<p>Composer runs the scripts and plugins of the package and of its dependencies during the build, as the system user of this instance. Build only from packages you trust.</p>
     ';
     $this->addSubmitHandler('hosting_platform_composer_platform_submit');
   }
@@ -48,8 +46,27 @@ class HostingPlatformComposerForm extends HostingForm {
   }
 
   public function submit() {
+    if (!$this->savedWithThisStrategy()) {
+      return;
+    }
     $this->setProjectPath();
     $this->setPublishPath();
+  }
+
+  /**
+   * Whether the platform is saved with this strategy.
+   *
+   * Every strategy's handler runs on every platform save, and its fields
+   * are submitted, hidden or not, whatever the strategy: only this
+   * strategy's own save sets the build folder and the Platform Path from
+   * them. Where the form carries no strategy, the handler runs as it did.
+   */
+  protected function savedWithThisStrategy() {
+    $lang = $this->language();
+    if (!isset($this->form_state['values']['field_deployment_strategy'][$lang][0]['value'])) {
+      return TRUE;
+    }
+    return $this->form_state['values']['field_deployment_strategy'][$lang][0]['value'] === 'platform_composer';
   }
 
   protected function setProjectPath() {

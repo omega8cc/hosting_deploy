@@ -26,11 +26,15 @@ class HostingPlatformComposerGitForm extends HostingForm {
     $this->moveFieldsIntoFieldset('platform_composer_git', $this->fields);
     $this->form['platform_composer_git']['#title'] = 'Deploy a Composer project from a Git repository';
     $this->form['platform_composer_git']['#description'] = '
-<p>You may deploy this platform from a Composer project Git URL.</p>
+<p>Builds this platform from your own Git repository. The first Verify clones the <em>Git URL</em> into the Platform Path, which must be a folder that does not exist yet, checks out the <em>Branch/tag</em> and runs <code>composer install --no-dev</code> there. An empty <em>Branch/tag</em> means <code>master</code>.</p>
 
-<p>You\'ll need a Git repository started with something like the following:</p>
+<p>Commit <code>composer.lock</code> to the repository and build from a tag: the install then gives the same code every time. Require <code>drush/drush</code> in the repository itself. Where a codebase has none, the first Verify adds it and changes <code>composer.json</code> and <code>composer.lock</code> in the folder it cloned.</p>
 
-<p><code>composer create-project vardot/varbase-project:8.6.x-dev my_varbase --no-dev --no-interaction</code></p>
+<p>A private repository is cloned with the deploy key of this &AElig;gir instance: add the contents of <code>~/static/&lt;instance&gt;.id_ed25519.pub</code> to the repository as a read-only deploy key first.</p>
+
+<p>A build that fails removes what it made and fails the Verify. Correct the fields and run Verify again.</p>
+
+<p>Composer runs the scripts and plugins of the repository and of its packages during the build, as the system user of this instance. Build only from repositories you trust.</p>
     ';
     $this->addSubmitHandler('hosting_platform_composer_git_platform_submit');
   }
@@ -44,8 +48,27 @@ class HostingPlatformComposerGitForm extends HostingForm {
   }
 
   public function submit() {
+    if (!$this->savedWithThisStrategy()) {
+      return;
+    }
     $this->setProjectPath();
     $this->setPublishPath();
+  }
+
+  /**
+   * Whether the platform is saved with this strategy.
+   *
+   * Every strategy's handler runs on every platform save, and its fields
+   * are submitted, hidden or not, whatever the strategy: only this
+   * strategy's own save sets the build folder and the Platform Path from
+   * them. Where the form carries no strategy, the handler runs as it did.
+   */
+  protected function savedWithThisStrategy() {
+    $lang = $this->language();
+    if (!isset($this->form_state['values']['field_deployment_strategy'][$lang][0]['value'])) {
+      return TRUE;
+    }
+    return $this->form_state['values']['field_deployment_strategy'][$lang][0]['value'] === 'platform_composer_git';
   }
 
   protected function setProjectPath() {

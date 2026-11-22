@@ -15,6 +15,14 @@ function hosting_deploy_form_alter(&$form, &$form_state, $form_id) {
 }
 
 /**
+ * Submit callback for the platform node form.
+ */
+function hosting_deploy_platform_submit($form, &$form_state) {
+  $platform_node_form = new HostingDeployForm($form, $form_state);
+  $platform_node_form->submit();
+}
+
+/**
  * Implements hook_module_implements_alter().
  */
 function hosting_deploy_module_implements_alter(&$implementations, $hook) {

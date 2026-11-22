@@ -15,10 +15,7 @@
 function drush_platform_composer_provision_verify_validate() {
   if (d()->type == 'platform' && d()->composer_project_package) {
     $platform = new Provision_ComposerCreateProject();
-    $success = $platform->validateProvisionVerify();
-    if (!$success) {
-      $platform->postProvisionDelete();
-    }
+    return $platform->validateProvisionVerify();
   }
 }
 
@@ -57,6 +54,8 @@ function platform_composer_register_autoload() {
   if (!$loaded) {
     $loaded = TRUE;
     provision_autoload_register_prefix('Provision_', dirname(__FILE__));
+    // The build class the strategies of this project share.
+    provision_autoload_register_prefix('Provision_', dirname(dirname(dirname(dirname(__FILE__)))) . '/drush');
   }
 }
 
