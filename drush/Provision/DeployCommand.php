@@ -15,7 +15,10 @@
  * folder the backend user cannot write is refused before its first step,
  * with the folder, its owner and its mode named, and so is a build with no
  * full path. A build whose code needs a newer PHP than the Verify runs on is
- * kept, and the Verify stops with that PHP named.
+ * kept, and the Verify stops with that PHP named. Each step is stopped, with
+ * everything it started, when it stays silent past one limit or runs past
+ * another; the marker names the running step's process group, so a Delete
+ * never removes a folder a build still writes into.
  */
 class Provision_DeployCommand extends Provision_ShellCommand {
 
@@ -24,6 +27,17 @@ class Provision_DeployCommand extends Provision_ShellCommand {
 
   // Seconds a stopped step gets to end by itself before it is killed.
   protected $stop_grace = 10;
+
+  // Seconds one build step may run in all, output or not, before it is
+  // stopped: the instance runs one task at a time, so a build that never
+  // ends would hold every other task of the account.
+  protected $step_limit = 2700;
+
+  // What the marker says above the line naming the running step's group.
+  protected $marker_text = '';
+
+  // The last lines of the running step's output that can say why it failed.
+  protected $tail = [];
 
   // Whether this run found no folder at the build path and so made its own.
   protected $made_path = FALSE;
@@ -63,6 +77,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
 
   public function validateProvisionVerify() {
     $path = $this->cleanPath();
+    if ($this->refuseBesideLiveBuild(dt('Verify'))) {
+      return FALSE;
+    }
     if ($this->pathExists($path)) {
       if ($this->buildIsUnfinished()) {
         return $this->buildError('PLATFORM_BUILD_UNFINISHED', dt('A build at `:path` has not finished (`:marker` says so), so the code there is not taken as this platform. Delete this platform and add it again, or remove that folder and run Verify again. If the folder is complete and your own, remove the marker file instead.', [
@@ -267,11 +284,159 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     }
     $text = 'A platform build into ' . $this->cleanPath() . ' started on ' . date('Y-m-d H:i:s') . ' (process ' . getmypid() . ") and has not finished.\n";
     $text .= "The build removes this file when it ends. While it is here, Verify does not take that folder as the platform.\n";
-    if (@file_put_contents($marker, $text) === FALSE) {
+    $this->marker_text = $text;
+    if (!$this->writeMarker($marker, $text)) {
       $this->notice(dt('The build marker `:marker` could not be written.', [':marker' => $marker]));
       return FALSE;
     }
     return TRUE;
+  }
+
+  /**
+   * Write the marker as a new file of its own, renamed into place.
+   *
+   * Its folder is one the account's logins can write in: whatever stands
+   * at its name, a link among them, is replaced and never written through.
+   */
+  protected function writeMarker($marker, $text) {
+    $tmp = $marker . '.' . getmypid() . '.new';
+    @unlink($tmp);
+    $handle = @fopen($tmp, 'xb');
+    if ($handle === FALSE) {
+      return FALSE;
+    }
+    $ok = fwrite($handle, $text) === strlen($text);
+    fclose($handle);
+    if (!$ok || !@rename($tmp, $marker)) {
+      @unlink($tmp);
+      return FALSE;
+    }
+    return TRUE;
+  }
+
+  /**
+   * Name the running step's process group in the marker.
+   *
+   * The steps run in a group of their own, which outlives a Verify killed
+   * from outside: the group says whether anything still writes into the
+   * folder. Only a marker this run wrote is rewritten.
+   */
+  protected function markStepGroup($pgid) {
+    $marker = $this->buildMarker();
+    if (!$marker || $this->marker_text === '' || (int) $pgid < 2 || !is_file($marker) || is_link($marker)) {
+      return;
+    }
+    // The boot and the leader's start time tie the number to this group: a
+    // number can be given to another process once the group has ended.
+    $text = $this->marker_text . 'pgid=' . (int) $pgid . "\n";
+    $boot = $this->bootId();
+    if ($boot !== '') {
+      $text .= 'boot=' . $boot . "\n";
+    }
+    $start = $this->processStart((int) $pgid);
+    if ($start !== '') {
+      $text .= 'start=' . $start . "\n";
+    }
+    $this->writeMarker($marker, $text);
+  }
+
+  /**
+   * This boot's id, or '' where the system does not say.
+   */
+  protected function bootId() {
+    $id = @file_get_contents('/proc/sys/kernel/random/boot_id', FALSE, NULL, 0, 64);
+    return (is_string($id) && preg_match('/^[0-9a-f-]{36}$/', trim($id))) ? trim($id) : '';
+  }
+
+  /**
+   * When a process started, in clock ticks since boot, or '' when unknown.
+   */
+  protected function processStart($pid) {
+    $stat = @file_get_contents('/proc/' . (int) $pid . '/stat', FALSE, NULL, 0, 4096);
+    if (!is_string($stat) || ($end = strrpos($stat, ')')) === FALSE) {
+      return '';
+    }
+    // The fields after the name; the start time is the stat's field 22.
+    $rest = explode(' ', trim(substr($stat, $end + 2)));
+    return (isset($rest[19]) && ctype_digit($rest[19])) ? $rest[19] : '';
+  }
+
+  /**
+   * Refuse a Verify while an earlier build of this folder still runs.
+   *
+   * A Verify killed from outside leaves its step running in a group of its
+   * own: a new build into the same folder would work beside it, and the old
+   * step's clean-up could remove the new build.
+   */
+  protected function refuseBesideLiveBuild($what) {
+    $marker = $this->buildMarker();
+    $pgid = $this->markerGroupAlive($marker);
+    if (!$pgid) {
+      return FALSE;
+    }
+    $text = 'A build process (group :pgid) still writes into `:path`, so this :what changes nothing. Run it again once that process has ended';
+    // Only a group whose leader still runs is bounded by it: what a step
+    // left running after its own command ended has no limit.
+    $text .= $this->markerLeaderRuns($marker, $pgid) ? '; it ends within :minutes minutes of its start.' : '. The command that started it has ended, so nothing here ends what is left of that group: the account\'s system user can, with `kill -- -:pgid`.';
+    $this->buildError('PLATFORM_BUILD_STILL_RUNNING', dt($text, [
+      ':pgid' => $pgid,
+      ':path' => $this->cleanPath(),
+      ':what' => $what,
+      ':minutes' => (int) ceil(($this->step_limit + 70) / 60),
+    ]));
+    return TRUE;
+  }
+
+  /**
+   * Whether the leader a marker names, the step's own bounded command, runs.
+   */
+  protected function markerLeaderRuns($marker, $pgid) {
+    $text = @file_get_contents($marker, FALSE, NULL, 0, 4096);
+    $now = $this->processStart($pgid);
+    if ($now === '') {
+      return FALSE;
+    }
+    return !is_string($text) || !preg_match('/^start=([0-9]+)$/m', $text, $s) || $s[1] === $now;
+  }
+
+  /**
+   * Refuse a Delete while a build of this platform's folder still runs.
+   *
+   * Refused here, before the backend removes anything, the platform keeps
+   * its record and its alias: the same Delete, run again once the build has
+   * ended, still knows the folder and removes it. Refused later, the alias
+   * would be gone and the folder left behind for good.
+   */
+  public function validateProvisionDelete() {
+    return $this->refuseBesideLiveBuild(dt('Delete')) ? FALSE : TRUE;
+  }
+
+  /**
+   * The process group a marker names when any of it still runs, or 0.
+   */
+  protected function markerGroupAlive($marker) {
+    if (!$marker || !is_file($marker) || !function_exists('posix_kill')) {
+      return 0;
+    }
+    $text = @file_get_contents($marker, FALSE, NULL, 0, 4096);
+    if (!is_string($text) || !preg_match('/^pgid=([0-9]+)$/m', $text, $m) || (int) $m[1] < 2) {
+      return 0;
+    }
+    $pgid = (int) $m[1];
+    // Another boot, or a leader that started at another time: the number
+    // now names another group.
+    if (preg_match('/^boot=(\S+)$/m', $text, $b) && $this->bootId() !== '' && $b[1] !== $this->bootId()) {
+      return 0;
+    }
+    if (preg_match('/^start=([0-9]+)$/m', $text, $s)) {
+      $now = $this->processStart($pgid);
+      if ($now !== '' && $now !== $s[1]) {
+        return 0;
+      }
+    }
+    // A build runs as this same user: a group it cannot signal (EPERM) is
+    // never the build's, and does not keep anything from going ahead.
+    return posix_kill(-$pgid, 0) ? $pgid : 0;
   }
 
   protected function clearBuildMarker() {
@@ -306,8 +471,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    * build path from the usual removal, because nothing verified what stands
    * there: a mistyped Platform Path can name a folder that holds anything.
    * One thing is known to be this build's, the folder beside the marker of a
-   * build that never finished. That folder and its marker go; whatever else
-   * is there stays.
+   * build that never finished. That folder and its marker go, unless the
+   * build's process group still runs (the Delete then fails and can run
+   * again); whatever else is there stays.
    *
    * @param string $property
    *   The context property that holds this strategy's build path.
@@ -316,7 +482,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    *   TRUE when the backend flagged such a Delete, whatever was done here.
    */
   protected function removeUnfinishedLeftover($property) {
-    $kept = drush_get_context('PROVISION_NO_CODEBASE_DEPLOY_PATHS', NULL);
+    // Drush gives an unset context as an empty array: only a default it
+    // keeps tells a Delete with no codebase from any other.
+    $kept = drush_get_context('PROVISION_NO_CODEBASE_DEPLOY_PATHS', FALSE);
     if (!is_array($kept)) {
       return FALSE;
     }
@@ -325,6 +493,15 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     }
     $path = rtrim(trim($kept[$property]), '/');
     $marker = $this->markerFor($path);
+    if ($marker && is_file($marker) && ($pgid = $this->markerGroupAlive($marker))) {
+      // A failed Delete keeps the platform's record, so the same Delete can
+      // run again; it removes the folder once the build has ended.
+      $this->buildError('PLATFORM_BUILD_STILL_RUNNING', dt('A build process (group :pgid) still writes into `:path`, so nothing there was removed. Run this Delete again once that process has ended.', [
+        ':path' => $path,
+        ':pgid' => $pgid,
+      ]));
+      return TRUE;
+    }
     if ($marker && is_file($marker)) {
       if ($this->pathIsRemovable($path) && (file_exists($path) || is_link($path))) {
         $this->notice(dt('Removing the folder an unfinished build left at `:path`.', [':path' => $path]));
@@ -393,9 +570,10 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    * Run a command in a subprocess, stream its output, and say how it ended.
    *
    * Returns TRUE when the command ended with status 0. Every other end sets
-   * an error and returns FALSE: a non-zero status, a command that could not
-   * be started, and one that stayed silent past the limit, which is stopped
-   * first with everything it started.
+   * an error and returns FALSE: a non-zero status, with the last lines of
+   * output that can say why; a command that could not be started; and one
+   * that stayed silent past the silence limit or ran past the step limit,
+   * which is stopped first with everything it started.
    */
   protected function execCommand($command) {
     $this->notice("Executing: `$command`");
@@ -404,10 +582,22 @@ class Provision_DeployCommand extends Provision_ShellCommand {
       1 => ['pipe', 'w'],
       2 => ['pipe', 'w'],
     ];
+    $grouped = (function_exists('posix_kill') && is_executable('/usr/bin/setsid'));
     $process = proc_open($this->wrapCommand($command), $descriptorspec, $pipes, realpath('./'));
     if (!is_resource($process)) {
       return $this->buildError('PLATFORM_BUILD_NOT_STARTED', dt('The command could not be started: `:command`', [':command' => $command]));
     }
+    $started = NULL;
+    if ($grouped) {
+      // setsid makes the started process the leader of the step's group.
+      // A step that has already ended leaves no group to name.
+      $started = proc_get_status($process);
+      if (!empty($started['pid']) && !empty($started['running'])) {
+        $this->markStepGroup($started['pid']);
+      }
+    }
+    $deadline = time() + $this->step_limit;
+    $this->tail = [];
     fclose($pipes[0]);
     $open = [1 => $pipes[1], 2 => $pipes[2]];
     $pending = [1 => '', 2 => ''];
@@ -415,8 +605,13 @@ class Provision_DeployCommand extends Provision_ShellCommand {
       stream_set_blocking($stream, FALSE);
     }
     $last_output = time();
-    // The status the command ended with, once it has ended.
+    // The status the command ended with, once it has ended. Before PHP 8.3
+    // only the first look after the end gives it, so a quick command that
+    // ended before the look above keeps the status that look got.
     $exitcode = NULL;
+    if (is_array($started) && isset($started['running']) && empty($started['running'])) {
+      $exitcode = $started['exitcode'];
+    }
     while (!empty($open)) {
       $read = array_values($open);
       $write = NULL;
@@ -435,18 +630,18 @@ class Provision_DeployCommand extends Provision_ShellCommand {
             $last_output = time();
             $pending[$key] .= $chunk;
             while (($end = strpos($pending[$key], "\n")) !== FALSE) {
-              $this->notice(substr($pending[$key], 0, $end + 1));
+              $this->outputLine(substr($pending[$key], 0, $end + 1));
               $pending[$key] = (string) substr($pending[$key], $end + 1);
             }
             // A progress meter that never ends its line is still output.
             if (strlen($pending[$key]) > 65536) {
-              $this->notice($pending[$key]);
+              $this->outputLine($pending[$key]);
               $pending[$key] = '';
             }
           }
           elseif (feof($stream)) {
             if ($pending[$key] !== '') {
-              $this->notice($pending[$key]);
+              $this->outputLine($pending[$key]);
               $pending[$key] = '';
             }
             fclose($stream);
@@ -478,18 +673,32 @@ class Provision_DeployCommand extends Provision_ShellCommand {
           ':command' => $command,
         ]));
       }
+      // Output or not, ended or still read: the whole step is bounded.
+      if (time() >= $deadline) {
+        return $this->stopTooLong($process, $open, $command);
+      }
     }
     foreach ($open as $key => $stream) {
       if ($pending[$key] !== '') {
-        $this->notice($pending[$key]);
+        $this->outputLine($pending[$key]);
       }
       fclose($stream);
     }
     if ($exitcode === NULL) {
-      // Workaround for proc_close()'s propensity to return an error status.
+      // The pipes closed, or could not be read, while the command still ran:
+      // wait for its end within the same limit. proc_get_status() gives the
+      // real status once, on the first look after the end, and proc_close()
+      // may not, so the status is kept from that look.
       $status = proc_get_status($process);
-      $exit = proc_close($process);
-      $return = $status['running'] ? $exit : $status['exitcode'];
+      while (!empty($status['running']) && time() < $deadline) {
+        sleep(1);
+        $status = proc_get_status($process);
+      }
+      if (!empty($status['running'])) {
+        return $this->stopTooLong($process, [], $command);
+      }
+      proc_close($process);
+      $return = $status['exitcode'];
     }
     else {
       proc_close($process);
@@ -498,7 +707,58 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     if ($return === 0) {
       return $this->success("Finished running: `$command`");
     }
-    return $this->error(dt('An error occured when running command! (returned :exit)', [':exit' => $return]));
+    return $this->buildError('PLATFORM_BUILD_STEP_FAILED', dt('The build command ended with status :exit: `:command`.:why', [
+      ':exit' => $return,
+      ':command' => $command,
+      ':why' => $this->tailText(),
+    ]));
+  }
+
+  /**
+   * Stop a step that ran past the step limit, with everything it started.
+   */
+  protected function stopTooLong($process, $open, $command) {
+    $this->stopProcess($process);
+    foreach ($open as $stream) {
+      fclose($stream);
+    }
+    proc_close($process);
+    return $this->buildError('PLATFORM_BUILD_TOO_LONG', dt('The command ran longer than :minutes minutes, so it was stopped with everything it started: `:command`', [
+      ':minutes' => (int) ceil($this->step_limit / 60),
+      ':command' => $command,
+    ]));
+  }
+
+  /**
+   * Log a line of a step's output, and keep it when it can say why it failed.
+   *
+   * Composer's stack frames and its per-package lines say nothing of the
+   * cause, and its messages come framed by blank lines: the last five other
+   * lines are kept for the error of a failed step.
+   */
+  protected function outputLine($text) {
+    $this->notice($text);
+    $line = trim($text);
+    // A command's synopsis, which Composer prints after its error, is no cause.
+    if ($line === '' || strpos($line, 'phar://') !== FALSE || preg_match('/^at \//', $line)
+      || preg_match('/^[a-z][a-z:-]* \[-/', $line)
+      || preg_match('/^- (Downloading|Installing|Upgrading|Downgrading|Locking|Removing|Extracting|Syncing|Cloning|Checking out) /', $line)) {
+      return;
+    }
+    $this->tail[] = (strlen($line) > 300) ? substr($line, 0, 300) . '...' : $line;
+    if (count($this->tail) > 5) {
+      array_shift($this->tail);
+    }
+  }
+
+  /**
+   * The kept lines of a failed step, as the end of its error.
+   */
+  protected function tailText() {
+    if (empty($this->tail)) {
+      return '';
+    }
+    return ' ' . dt('Its last lines: :lines', [':lines' => implode(' | ', $this->tail)]);
   }
 
   /**
@@ -509,7 +769,11 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    */
   protected function wrapCommand($command) {
     if (function_exists('posix_kill') && is_executable('/usr/bin/setsid')) {
-      return 'exec /usr/bin/setsid /bin/sh -c ' . escapeshellarg($command);
+      // timeout leads the group and stops it a minute after the step limit:
+      // a step whose Verify was killed from outside, and which nothing here
+      // stops any more, still ends.
+      $bound = is_executable('/usr/bin/timeout') ? '/usr/bin/timeout -k 10 ' . ($this->step_limit + 60) . ' ' : '';
+      return 'exec /usr/bin/setsid ' . $bound . '/bin/sh -c ' . escapeshellarg($command);
     }
     return $command;
   }
