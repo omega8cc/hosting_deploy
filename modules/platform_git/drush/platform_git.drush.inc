@@ -27,6 +27,19 @@ function platform_git_composer_install_path() {
 }
 
 /**
+ * Implements drush_HOOK_COMMAND_validate() for provision-delete.
+ *
+ * Refuses the Delete, before anything is removed, while a build of the
+ * platform's folder still runs.
+ */
+function drush_platform_git_provision_delete_validate() {
+  if (d()->type == 'platform' && d()->git_repository_path) {
+    $platform = new Provision_PlatformGit();
+    return $platform->validateProvisionDelete();
+  }
+}
+
+/**
  * Implements drush_HOOK_post_COMMAND() for provision-delete command.
  *
  * If repository path is different from root, delete it too.
