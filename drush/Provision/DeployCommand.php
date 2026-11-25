@@ -482,7 +482,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    *   TRUE when the backend flagged such a Delete, whatever was done here.
    */
   protected function removeUnfinishedLeftover($property) {
-    $kept = drush_get_context('PROVISION_NO_CODEBASE_DEPLOY_PATHS', NULL);
+    // Drush gives an unset context as an empty array: only a default it
+    // keeps tells a Delete with no codebase from any other.
+    $kept = drush_get_context('PROVISION_NO_CODEBASE_DEPLOY_PATHS', FALSE);
     if (!is_array($kept)) {
       return FALSE;
     }
