@@ -285,8 +285,30 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     $text = 'A platform build into ' . $this->cleanPath() . ' started on ' . date('Y-m-d H:i:s') . ' (process ' . getmypid() . ") and has not finished.\n";
     $text .= "The build removes this file when it ends. While it is here, Verify does not take that folder as the platform.\n";
     $this->marker_text = $text;
-    if (@file_put_contents($marker, $text) === FALSE) {
+    if (!$this->writeMarker($marker, $text)) {
       $this->notice(dt('The build marker `:marker` could not be written.', [':marker' => $marker]));
+      return FALSE;
+    }
+    return TRUE;
+  }
+
+  /**
+   * Write the marker as a new file of its own, renamed into place.
+   *
+   * Its folder is one the account's logins can write in: whatever stands
+   * at its name, a link among them, is replaced and never written through.
+   */
+  protected function writeMarker($marker, $text) {
+    $tmp = $marker . '.' . getmypid() . '.new';
+    @unlink($tmp);
+    $handle = @fopen($tmp, 'xb');
+    if ($handle === FALSE) {
+      return FALSE;
+    }
+    $ok = fwrite($handle, $text) === strlen($text);
+    fclose($handle);
+    if (!$ok || !@rename($tmp, $marker)) {
+      @unlink($tmp);
       return FALSE;
     }
     return TRUE;
@@ -301,7 +323,7 @@ class Provision_DeployCommand extends Provision_ShellCommand {
    */
   protected function markStepGroup($pgid) {
     $marker = $this->buildMarker();
-    if (!$marker || $this->marker_text === '' || (int) $pgid < 2 || !is_file($marker)) {
+    if (!$marker || $this->marker_text === '' || (int) $pgid < 2 || !is_file($marker) || is_link($marker)) {
       return;
     }
     // The boot and the leader's start time tie the number to this group: a
@@ -315,7 +337,7 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     if ($start !== '') {
       $text .= 'start=' . $start . "\n";
     }
-    @file_put_contents($marker, $text);
+    $this->writeMarker($marker, $text);
   }
 
   /**
