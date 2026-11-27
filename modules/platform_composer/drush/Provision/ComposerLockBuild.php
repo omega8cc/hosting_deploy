@@ -50,6 +50,9 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   protected $error_code = '';
   protected $error_text = '';
 
+  // The command that runs Composer.
+  protected $composer = 'composer';
+
   /**
    * @param array $recipe
    *   'path', 'source', 'docroot', 'resolve' (array), 'fingerprint',
@@ -75,6 +78,13 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   public function deploy() {
     if ($this->recipeIsWhole() !== TRUE) {
       return FALSE;
+    }
+    // A folder that is there already is never this build's: refused before
+    // the marker is written beside it, which a later Delete would read as
+    // the mark of this build.
+    clearstatcache();
+    if (file_exists($this->path) || is_link($this->path)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` is there already.', [':path' => $this->path]));
     }
     return $this->deployPlatform() === TRUE;
   }
@@ -367,14 +377,19 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * release with an advisory that the update was not asked to move, which
    * would fail every update of modules while the locked core carries one.
    * The task names an advisory the build adds. The malware block stays on.
-   * No plugin runs: the copy has none installed.
+   * The setting is this step's alone, in its environment, as the terminal
+   * width is. No plugin runs: the copy has none installed.
    */
   protected function resolveLock() {
     $words = '';
     foreach ($this->resolve as $word) {
       $words .= ' ' . escapeshellarg((string) $word);
     }
-    return $this->execCommand('cd ' . escapeshellarg($this->path) . ' && COMPOSER_POLICY_ADVISORIES_BLOCK=0 composer update' . $words . ' --no-install --no-scripts --no-plugins --no-audit --no-interaction --no-progress');
+    $block = getenv('COMPOSER_POLICY_ADVISORIES_BLOCK');
+    putenv('COMPOSER_POLICY_ADVISORIES_BLOCK=0');
+    $ok = $this->execCommand('cd ' . escapeshellarg($this->path) . ' && ' . $this->composer . ' update' . $words . ' --no-install --no-scripts --no-plugins --no-audit --no-interaction --no-progress');
+    putenv(($block === FALSE) ? 'COMPOSER_POLICY_ADVISORIES_BLOCK' : 'COMPOSER_POLICY_ADVISORIES_BLOCK=' . $block);
+    return $ok;
   }
 
   /**
@@ -397,7 +412,7 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * may run files of the copy that the account's logins could write.
    */
   protected function installLock() {
-    return $this->execCommand('cd ' . escapeshellarg($this->path) . ' && composer install --no-dev --no-interaction --no-progress --no-scripts');
+    return $this->execCommand('cd ' . escapeshellarg($this->path) . ' && ' . $this->composer . ' install --no-dev --no-interaction --no-progress --no-scripts');
   }
 
   /**
