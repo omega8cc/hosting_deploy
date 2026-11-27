@@ -105,6 +105,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     if ($this->deployPlatform() !== TRUE) {
       return FALSE;
     }
+    // The panel records what this build made once the whole Verify has run,
+    // provision's own changes to the codebase included.
+    drush_set_option('platform_build_made', $path, 'site');
     return $this->checkBuildPhp($path);
   }
 
