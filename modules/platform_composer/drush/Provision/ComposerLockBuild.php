@@ -12,10 +12,12 @@
  * Verify: the recipe and the folder it copies stay in the process that
  * checked them, and the Verify that follows takes the folder as it is. The
  * marker, the step limits and the removal of a failed build are those of
- * every build of this module. The folder stays closed to the account's
- * logins until the build is done, since they can write the platform it is
- * copied from. Its errors are kept here: the calling task says what
- * happened in its own result.
+ * every build of this module. The account's logins can write the platform
+ * it is copied from and the folder both platforms sit in, where a folder
+ * being built can be renamed away and another put in its place: the build
+ * is made in a folder under the backend user's home that no login can
+ * change, and moved beside the source whole once it is done. Its errors are
+ * kept here: the calling task says what happened in its own result.
  */
 class Provision_ComposerLockBuild extends Provision_DeployCommand {
 
@@ -24,6 +26,16 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
 
   // The folder the build makes.
   protected $path = '';
+
+  // The folder the build is made in, closed to every login: the recipe's
+  // 'stage', else .lockbuild in the backend user's home.
+  protected $stage_root = '';
+
+  // The folder the steps build, moved to $path once they are done.
+  protected $stage = '';
+
+  // The lock on the build's name, held while it runs.
+  protected $lock = NULL;
 
   // The project folder of the platform it is built from.
   protected $source = '';
@@ -56,17 +68,18 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   /**
    * @param array $recipe
    *   'path', 'source', 'docroot', 'resolve' (array), 'fingerprint',
-   *   'judge' (a callable) and 'mode' (an integer).
+   *   'judge' (a callable), 'mode' (an integer) and, optionally, 'stage'.
    */
   public function __construct($recipe) {
     parent::__construct();
-    foreach (['path' => 'path', 'source' => 'source', 'docroot' => 'docroot', 'fingerprint' => 'expected'] as $key => $property) {
+    foreach (['path' => 'path', 'source' => 'source', 'docroot' => 'docroot', 'fingerprint' => 'expected', 'stage' => 'stage_root'] as $key => $property) {
       if (isset($recipe[$key]) && is_string($recipe[$key])) {
         $this->{$property} = $recipe[$key];
       }
     }
     $this->path = rtrim($this->path, '/');
     $this->source = rtrim($this->source, '/');
+    $this->stage_root = ($this->stage_root === '/') ? '/' : rtrim($this->stage_root, '/');
     $this->resolve = (isset($recipe['resolve']) && is_array($recipe['resolve'])) ? array_values($recipe['resolve']) : [];
     $this->judge = isset($recipe['judge']) ? $recipe['judge'] : NULL;
     $this->folder_mode = isset($recipe['mode']) ? (int) $recipe['mode'] : 0;
@@ -79,14 +92,20 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
     if ($this->recipeIsWhole() !== TRUE) {
       return FALSE;
     }
-    // A folder that is there already is never this build's: refused before
-    // the marker is written beside it, which a later Delete would read as
-    // the mark of this build.
+    // A folder that is there already is never this build's, and the build
+    // is never moved over it.
     clearstatcache();
     if (file_exists($this->path) || is_link($this->path)) {
       return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` is there already.', [':path' => $this->path]));
     }
-    return $this->deployPlatform() === TRUE;
+    $done = FALSE;
+    try {
+      $done = ($this->openStage() === TRUE && $this->deployPlatform() === TRUE);
+    }
+    finally {
+      $this->closeStage();
+    }
+    return $done;
   }
 
   /**
@@ -104,8 +123,10 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
     return $this->error_text;
   }
 
+  // The steps, the marker and the removal of a failed build know the stage
+  // alone: nothing reaches the new folder's name until it is moved there.
   protected function buildPath() {
-    return $this->path;
+    return $this->stage;
   }
 
   protected function announceBuild() {
@@ -126,6 +147,7 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
       'installLock',
       'recordFiles',
       'openFolder',
+      'placeFolder',
     ];
   }
 
@@ -167,11 +189,11 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    */
   protected function makeFolder() {
     clearstatcache();
-    if (file_exists($this->path) || is_link($this->path)) {
-      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` is there already.', [':path' => $this->path]));
+    if (file_exists($this->stage) || is_link($this->stage)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` is there already.', [':path' => $this->stage]));
     }
-    if (!@mkdir($this->path, 0700) || !@chmod($this->path, 0700)) {
-      return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:path` could not be made.', [':path' => $this->path]));
+    if (!@mkdir($this->stage, 0700) || !@chmod($this->stage, 0700)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:path` could not be made.', [':path' => $this->stage]));
     }
     return TRUE;
   }
@@ -193,8 +215,8 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
     foreach ($this->installedFolders() as $folder) {
       $excludes[] = './' . $folder;
     }
-    $main = $this->path . '/.lockbuild-main.tar';
-    $all = $this->path . '/.lockbuild-all.tar';
+    $main = $this->stage . '/.lockbuild-main.tar';
+    $all = $this->stage . '/.lockbuild-all.tar';
     $command = 'tar -C ' . escapeshellarg($this->source) . ' --anchored --no-wildcards';
     foreach (array_unique($excludes) as $exclude) {
       $command .= ' --exclude=' . escapeshellarg($exclude);
@@ -205,20 +227,20 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
     }
     // The archive's own entry for the project folder would give the new
     // folder the source's mode, and open it before the build is done.
-    if ($this->execCommand('tar -C ' . escapeshellarg($this->path) . ' --no-overwrite-dir -xpf ' . escapeshellarg($main)) !== TRUE) {
+    if ($this->execCommand('tar -C ' . escapeshellarg($this->stage) . ' --no-overwrite-dir -xpf ' . escapeshellarg($main)) !== TRUE) {
       return FALSE;
     }
     @unlink($main);
     clearstatcache();
     $from = $this->source . '/' . $sites;
     if (!is_link($from) && !is_link($from . '/all') && is_dir($from . '/all')) {
-      if (!is_dir($this->path . '/' . $sites) && !@mkdir($this->path . '/' . $sites, 0755, TRUE)) {
-        return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:path` could not be made.', [':path' => $this->path . '/' . $sites]));
+      if (!is_dir($this->stage . '/' . $sites) && !@mkdir($this->stage . '/' . $sites, 0755, TRUE)) {
+        return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:path` could not be made.', [':path' => $this->stage . '/' . $sites]));
       }
       if ($this->execCommand('tar -C ' . escapeshellarg($from) . ' -cf ' . escapeshellarg($all) . ' ./all') !== TRUE) {
         return FALSE;
       }
-      if ($this->execCommand('tar -C ' . escapeshellarg($this->path . '/' . $sites) . ' -xpf ' . escapeshellarg($all)) !== TRUE) {
+      if ($this->execCommand('tar -C ' . escapeshellarg($this->stage . '/' . $sites) . ' -xpf ' . escapeshellarg($all)) !== TRUE) {
         return FALSE;
       }
       @unlink($all);
@@ -298,8 +320,8 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * tell the nightly the new platform was fixed already.
    */
   protected function pruneCopy() {
-    $all = $this->path . '/' . $this->sitesFolder() . '/all';
-    $left = $this->pruneLinks($this->path);
+    $all = $this->stage . '/' . $this->sitesFolder() . '/all';
+    $left = $this->pruneLinks($this->stage);
     if ($left !== '') {
       return $this->buildError('PLATFORM_LOCK_BUILD_COPY', dt('The copy holds `:what`, which could not be taken out.', [':what' => $left]));
     }
@@ -360,7 +382,7 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * built the source with.
    */
   protected function checkCopy() {
-    $files = self::fingerprintOf($this->path);
+    $files = self::fingerprintOf($this->stage);
     if ($files === '') {
       return $this->buildError('PLATFORM_LOCK_BUILD_FILES', dt('The composer.json or composer.lock of `:source` cannot be read.', [':source' => $this->source]));
     }
@@ -387,7 +409,7 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
     }
     $block = getenv('COMPOSER_POLICY_ADVISORIES_BLOCK');
     putenv('COMPOSER_POLICY_ADVISORIES_BLOCK=0');
-    $ok = $this->execCommand('cd ' . escapeshellarg($this->path) . ' && ' . $this->composer . ' update' . $words . ' --no-install --no-scripts --no-plugins --no-audit --no-interaction --no-progress');
+    $ok = $this->execCommand('cd ' . escapeshellarg($this->stage) . ' && ' . $this->composer . ' update' . $words . ' --no-install --no-scripts --no-plugins --no-audit --no-interaction --no-progress');
     putenv(($block === FALSE) ? 'COMPOSER_POLICY_ADVISORIES_BLOCK' : 'COMPOSER_POLICY_ADVISORIES_BLOCK=' . $block);
     return $ok;
   }
@@ -396,7 +418,7 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * The new lock judged against the source's before anything is installed.
    */
   protected function judgeLock() {
-    $why = call_user_func($this->judge, $this->path);
+    $why = call_user_func($this->judge, $this->stage);
     if (!is_string($why)) {
       return $this->buildError('PLATFORM_LOCK_BUILD_REFUSED', dt('The new composer.lock could not be judged.'));
     }
@@ -412,14 +434,14 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * may run files of the copy that the account's logins could write.
    */
   protected function installLock() {
-    return $this->execCommand('cd ' . escapeshellarg($this->path) . ' && ' . $this->composer . ' install --no-dev --no-interaction --no-progress --no-scripts');
+    return $this->execCommand('cd ' . escapeshellarg($this->stage) . ' && ' . $this->composer . ' install --no-dev --no-interaction --no-progress --no-scripts');
   }
 
   /**
    * The fingerprint of what was built, taken while the folder is closed.
    */
   protected function recordFiles() {
-    $this->files = self::fingerprintOf($this->path);
+    $this->files = self::fingerprintOf($this->stage);
     if ($this->files === '') {
       return $this->buildError('PLATFORM_LOCK_BUILD_FILES', dt('The built composer.json or composer.lock cannot be read.'));
     }
@@ -427,14 +449,182 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   }
 
   /**
-   * The folder gets the mode of the one it was built from.
+   * The folder gets the mode of the one it was built from, while the stage
+   * still keeps it from every login.
    */
   protected function openFolder() {
     $mode = ($this->folder_mode > 0) ? ($this->folder_mode & 07777) : 02775;
-    if (!@chmod($this->path, $mode)) {
-      return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:path` could not be given its mode.', [':path' => $this->path]));
+    if (!@chmod($this->stage, $mode)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:path` could not be given its mode.', [':path' => $this->stage]));
     }
     return TRUE;
+  }
+
+  /**
+   * The finished build moved beside the source, whole.
+   *
+   * rename() never follows a link at the new name and fails over a folder
+   * that holds anything, so a name taken while the build ran stays as it
+   * is and the build is removed as a failed one.
+   */
+  protected function placeFolder() {
+    clearstatcache();
+    if (file_exists($this->path) || is_link($this->path)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` appeared while the build ran.', [':path' => $this->path]));
+    }
+    $made = @lstat($this->stage);
+    if ($made === FALSE || !@rename($this->stage, $this->path)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The build could not be moved to `:path`.', [':path' => $this->path]));
+    }
+    clearstatcache();
+    $now = @lstat($this->path);
+    if ($now === FALSE || $now['ino'] !== $made['ino'] || $now['dev'] !== $made['dev']) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder at `:path` is no longer the build.', [':path' => $this->path]));
+    }
+    return TRUE;
+  }
+
+  /**
+   * The closed folder the build is made in, and the lock on its name.
+   *
+   * Every folder from the stage up to / must be one that only the backend
+   * user or root can change, the stage itself the backend user's and open
+   * to it alone, and the stage must be on the file system of the new
+   * folder, so that the finished build is moved there whole. What builds
+   * that were cut off left there goes first, each while its name's lock is
+   * held, this build's own name among them.
+   */
+  protected function openStage() {
+    $root = $this->stageRoot();
+    if ($root === '') {
+      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The backend user\'s home cannot be read, so the build has no closed folder to be made in.'));
+    }
+    $open = $this->stageOpenAt(dirname($root), FALSE);
+    clearstatcache();
+    if ($open === '' && !file_exists($root) && !is_link($root)) {
+      @mkdir($root, 0700);
+    }
+    if ($open === '') {
+      $open = $this->stageOpenAt($root, TRUE);
+    }
+    if ($open !== '') {
+      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The build is made in `:root`, but `:folder` can be changed by others than the backend user.', [':root' => $root, ':folder' => $open]));
+    }
+    $there = @stat($root);
+    $beside = @stat(dirname($this->path));
+    if ($there === FALSE || $beside === FALSE || $there['dev'] !== $beside['dev']) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('`:root` and `:folder` are not on one file system, so the build could not be moved into place whole.', [':root' => $root, ':folder' => dirname($this->path)]));
+    }
+    $name = basename($this->path);
+    $handle = @fopen($root . '/lock-' . $name, 'c');
+    if ($handle === FALSE) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The lock `:lock` could not be made.', [':lock' => $root . '/lock-' . $name]));
+    }
+    $this->lock = $handle;
+    if (!@flock($handle, LOCK_EX | LOCK_NB)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('Another build of `:path` runs.', [':path' => $this->path]));
+    }
+    $this->stage_root = $root;
+    $this->stage = $root . '/build-' . $name;
+    $this->sweepStages();
+    clearstatcache();
+    if (file_exists($this->stage) || is_link($this->stage)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('What an earlier build left at `:stage` could not be removed.', [':stage' => $this->stage]));
+    }
+    return TRUE;
+  }
+
+  /**
+   * The recipe's stage, else .lockbuild in the home of the process's user,
+   * read by its uid; '' when neither is known.
+   */
+  protected function stageRoot() {
+    if ($this->stage_root !== '') {
+      return ($this->stage_root[0] === '/') ? $this->stage_root : '';
+    }
+    if (!function_exists('posix_geteuid') || !function_exists('posix_getpwuid')) {
+      return '';
+    }
+    $user = posix_getpwuid(posix_geteuid());
+    if (!is_array($user) || !isset($user['dir']) || !is_string($user['dir']) || $user['dir'] === '' || $user['dir'][0] !== '/') {
+      return '';
+    }
+    return rtrim($user['dir'], '/') . '/.lockbuild';
+  }
+
+  /**
+   * The first folder from $folder up to / that others than the backend user
+   * and root can change, or '' when there is none. With $own, $folder must
+   * also be the backend user's, open to it alone.
+   */
+  protected function stageOpenAt($folder, $own) {
+    if (!function_exists('posix_geteuid')) {
+      return $folder;
+    }
+    $euid = posix_geteuid();
+    $first = TRUE;
+    while (TRUE) {
+      clearstatcache(TRUE, $folder);
+      $stat = @lstat($folder);
+      if ($stat === FALSE || ($stat['mode'] & 0170000) !== 0040000 || ($stat['uid'] !== $euid && $stat['uid'] !== 0) || ($stat['mode'] & 0022)) {
+        return $folder;
+      }
+      if ($first && $own && ($stat['uid'] !== $euid || ($stat['mode'] & 0077))) {
+        return $folder;
+      }
+      if ($folder === '/' || $folder === '.' || $folder === '') {
+        return '';
+      }
+      $first = FALSE;
+      $folder = dirname($folder);
+    }
+  }
+
+  /**
+   * Removes the stage and marker of every name whose lock no build holds;
+   * this build's own name is held by this build.
+   */
+  protected function sweepStages() {
+    $locks = @glob($this->stage_root . '/lock-*');
+    foreach (is_array($locks) ? $locks : [] as $file) {
+      $name = substr(basename($file), 5);
+      $own = ($name === basename($this->path));
+      $handle = $own ? $this->lock : @fopen($file, 'c');
+      if ($handle === FALSE) {
+        continue;
+      }
+      if (!$own && !@flock($handle, LOCK_EX | LOCK_NB)) {
+        fclose($handle);
+        continue;
+      }
+      $stage = $this->stage_root . '/build-' . $name;
+      clearstatcache();
+      if (is_link($stage) || is_file($stage)) {
+        @unlink($stage);
+      }
+      elseif (is_dir($stage)) {
+        _provision_recursive_delete($stage);
+      }
+      clearstatcache();
+      if (!file_exists($stage) && !is_link($stage)) {
+        @unlink($this->markerFor($stage));
+      }
+      if (!$own) {
+        @flock($handle, LOCK_UN);
+        fclose($handle);
+      }
+    }
+  }
+
+  /**
+   * Lets go of the name's lock. The lock file stays for the next build.
+   */
+  protected function closeStage() {
+    if (is_resource($this->lock)) {
+      @flock($this->lock, LOCK_UN);
+      @fclose($this->lock);
+    }
+    $this->lock = NULL;
   }
 
   /**
