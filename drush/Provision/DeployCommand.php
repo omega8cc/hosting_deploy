@@ -18,7 +18,10 @@
  * kept, and the Verify stops with that PHP named. Each step is stopped, with
  * everything it started, when it stays silent past one limit or runs past
  * another; the marker names the running step's process group, so a Delete
- * never removes a folder a build still writes into.
+ * never removes a folder a build still writes into. While its steps run, Git
+ * takes the key of an SSH server it meets for the first time and refuses one
+ * whose key has changed, unless an SSH client is already named for it or the
+ * client here does not know how.
  */
 class Provision_DeployCommand extends Provision_ShellCommand {
 
@@ -41,6 +44,11 @@ class Provision_DeployCommand extends Provision_ShellCommand {
 
   // The terminal width a build step is told it has.
   protected $columns = 500;
+
+  // The SSH client the build's Git starts: it takes the key of a server it
+  // meets for the first time, refuses one whose key has changed, and never
+  // asks, since a build has no terminal to ask at.
+  protected $ssh_command = 'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes';
 
   // Whether this run found no folder at the build path and so made its own.
   protected $made_path = FALSE;
@@ -147,17 +155,91 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     $this->made_path = ($path !== '' && !file_exists($path) && !is_link($path));
     $this->markBuildStarted();
     $this->announceBuild();
-    foreach ($this->buildSteps() as $step) {
-      if ($this->{$step}() !== TRUE) {
-        if (!drush_get_error()) {
-          $this->buildError('PLATFORM_BUILD_FAILED', dt('The build step `:step` failed.', [':step' => $step]));
+    $ssh = $this->setSshCommand();
+    $failed = FALSE;
+    try {
+      foreach ($this->buildSteps() as $step) {
+        if ($this->{$step}() !== TRUE) {
+          $failed = $step;
+          break;
         }
-        $this->removeFailedBuild();
-        return FALSE;
       }
+    }
+    finally {
+      // Taken back however the steps ended, a step that threw among them:
+      // what the task runs after the build must not start with it.
+      $this->restoreSshCommand($ssh);
+    }
+    if ($failed !== FALSE) {
+      if (!drush_get_error()) {
+        $this->buildError('PLATFORM_BUILD_FAILED', dt('The build step `:step` failed.', [':step' => $failed]));
+      }
+      $this->removeFailedBuild();
+      return FALSE;
     }
     $this->clearBuildMarker();
     return TRUE;
+  }
+
+  /**
+   * Let the build's Git take the key of an SSH server it has not met.
+   *
+   * A build has no terminal to ask at, so a repository on a server whose key
+   * the backend user does not hold yet could not be cloned at all. With this
+   * the client stores such a server's key at the first build, and a later
+   * build then refuses the server if its key has changed. The setting is the
+   * build's alone: it covers what the steps start, Composer's own Git calls
+   * among them, and is taken back when they end. It is not made where a
+   * client is already named, in the environment or in the Git configuration
+   * the backend user reads, nor where the SSH client is too old to know it
+   * and would refuse to start. TRUE when the setting was made here.
+   */
+  protected function setSshCommand() {
+    if (getenv('GIT_SSH_COMMAND') !== FALSE || getenv('GIT_SSH') !== FALSE) {
+      return FALSE;
+    }
+    if ($this->gitNamesSshClient() || !$this->sshTakesNewHosts()) {
+      return FALSE;
+    }
+    putenv('GIT_SSH_COMMAND=' . $this->ssh_command);
+    return TRUE;
+  }
+
+  /**
+   * Whether the backend user's Git configuration names an SSH client.
+   *
+   * The environment's setting would win over core.sshCommand, and a key or
+   * an option named there would no longer be used. Asked from the root
+   * folder, so that a repository the process happens to stand in is not
+   * read: the build's own clone is made elsewhere.
+   */
+  protected function gitNamesSshClient() {
+    $output = [];
+    $status = 1;
+    @exec('git -C / config --get core.sshCommand 2>/dev/null', $output, $status);
+    return ($status === 0 && trim(implode('', $output)) !== '');
+  }
+
+  /**
+   * Take the build's SSH setting back, when this run made it.
+   */
+  protected function restoreSshCommand($set) {
+    if ($set) {
+      putenv('GIT_SSH_COMMAND');
+    }
+  }
+
+  /**
+   * Whether the SSH client here knows how to take a new server's key.
+   *
+   * OpenSSH knows it from 7.6 on. An older client ends at once on the option
+   * with a status other than 0, and so does a box with no client at all.
+   */
+  protected function sshTakesNewHosts() {
+    $output = [];
+    $status = 1;
+    @exec('ssh -o StrictHostKeyChecking=accept-new -V 2>&1', $output, $status);
+    return ($status === 0);
   }
 
   /**
