@@ -39,6 +39,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
   // The last lines of the running step's output that can say why it failed.
   protected $tail = [];
 
+  // The terminal width a build step is told it has.
+  protected $columns = 500;
+
   // Whether this run found no folder at the build path and so made its own.
   protected $made_path = FALSE;
 
@@ -583,7 +586,13 @@ class Provision_DeployCommand extends Provision_ShellCommand {
       2 => ['pipe', 'w'],
     ];
     $grouped = (function_exists('posix_kill') && is_executable('/usr/bin/setsid'));
+    // With no terminal, Composer wraps its error at 80 columns, and the line
+    // that says what failed falls out of the last lines kept. A wide terminal
+    // keeps each of its messages on one line; the setting is the step's alone.
+    $columns = getenv('COLUMNS');
+    putenv('COLUMNS=' . $this->columns);
     $process = proc_open($this->wrapCommand($command), $descriptorspec, $pipes, realpath('./'));
+    putenv($columns === FALSE ? 'COLUMNS' : 'COLUMNS=' . $columns);
     if (!is_resource($process)) {
       return $this->buildError('PLATFORM_BUILD_NOT_STARTED', dt('The command could not be started: `:command`', [':command' => $command]));
     }
