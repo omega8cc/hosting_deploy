@@ -37,6 +37,12 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   // The lock on the build's name, held while it runs.
   protected $lock = NULL;
 
+  // The new folder's parent as its real path, and each folder from it up
+  // to / with its device and inode, read before the build and again before
+  // the build is moved there.
+  protected $parent = '';
+  protected $parents = [];
+
   // The project folder of the platform it is built from.
   protected $source = '';
 
@@ -463,25 +469,57 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   /**
    * The finished build moved beside the source, whole.
    *
-   * rename() never follows a link at the new name and fails over a folder
-   * that holds anything, so a name taken while the build ran stays as it
-   * is and the build is removed as a failed one.
+   * rename() takes the new name's parent by its path: the folders from it up
+   * to / must be the ones read before the build, none of them swapped for a
+   * link or another folder meanwhile, or the move could land wherever a
+   * login pointed it. It never follows a link at the new name and fails over
+   * a folder that holds anything, so a name taken while the build ran stays
+   * as it is and the build is removed as a failed one. The name's inode and
+   * the folders above it are read again after the move.
    */
   protected function placeFolder() {
+    $target = $this->parent . '/' . basename($this->path);
+    if ($this->parentChain() !== $this->parents) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('A folder above `:path` changed while the build ran.', [':path' => $this->path]));
+    }
     clearstatcache();
-    if (file_exists($this->path) || is_link($this->path)) {
+    if (file_exists($target) || is_link($target)) {
       return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` appeared while the build ran.', [':path' => $this->path]));
     }
     $made = @lstat($this->stage);
-    if ($made === FALSE || !@rename($this->stage, $this->path)) {
+    if ($made === FALSE || !@rename($this->stage, $target)) {
       return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The build could not be moved to `:path`.', [':path' => $this->path]));
     }
     clearstatcache();
-    $now = @lstat($this->path);
-    if ($now === FALSE || $now['ino'] !== $made['ino'] || $now['dev'] !== $made['dev']) {
+    $now = @lstat($target);
+    if ($now === FALSE || $now['ino'] !== $made['ino'] || $now['dev'] !== $made['dev'] || $this->parentChain() !== $this->parents) {
       return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder at `:path` is no longer the build.', [':path' => $this->path]));
     }
     return TRUE;
+  }
+
+  /**
+   * Each folder from the new folder's real parent up to /, as its path,
+   * device and inode; FALSE when the parent cannot be resolved.
+   */
+  protected function parentChain() {
+    clearstatcache();
+    $folder = realpath(dirname($this->path));
+    if (!is_string($folder) || $folder === '' || $folder[0] !== '/') {
+      return FALSE;
+    }
+    $chain = [];
+    while (TRUE) {
+      $stat = @lstat($folder);
+      if ($stat === FALSE || ($stat['mode'] & 0170000) !== 0040000) {
+        return FALSE;
+      }
+      $chain[] = [$folder, $stat['dev'], $stat['ino']];
+      if ($folder === '/') {
+        return $chain;
+      }
+      $folder = dirname($folder);
+    }
   }
 
   /**
@@ -495,14 +533,32 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
    * held, this build's own name among them.
    */
   protected function openStage() {
+    // The folder the build goes into is checked as every build's is: the
+    // build itself writes only in the stage.
+    if ($this->checkBuildFolder($this->path) !== TRUE) {
+      return FALSE;
+    }
+    $chain = $this->parentChain();
+    if (!is_array($chain)) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The folder `:folder` cannot be read.', [':folder' => dirname($this->path)]));
+    }
+    $this->parents = $chain;
+    $this->parent = $chain[0][0];
     $root = $this->stageRoot();
     if ($root === '') {
       return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The backend user\'s home cannot be read, so the build has no closed folder to be made in.'));
     }
     $open = $this->stageOpenAt(dirname($root), FALSE);
     clearstatcache();
-    if ($open === '' && !file_exists($root) && !is_link($root)) {
-      @mkdir($root, 0700);
+    if ($open === '' && !file_exists($root) && !is_link($root) && !@mkdir($root, 0700)) {
+      clearstatcache();
+      if (!file_exists($root) && !is_link($root)) {
+        $last = error_get_last();
+        return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The folder `:root` the build is made in could not be made: :why', [
+          ':root' => $root,
+          ':why' => (is_array($last) && isset($last['message'])) ? $last['message'] : 'no reason given',
+        ]));
+      }
     }
     if ($open === '') {
       $open = $this->stageOpenAt($root, TRUE);
@@ -511,9 +567,9 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
       return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The build is made in `:root`, but `:folder` can be changed by others than the backend user.', [':root' => $root, ':folder' => $open]));
     }
     $there = @stat($root);
-    $beside = @stat(dirname($this->path));
+    $beside = @stat($this->parent);
     if ($there === FALSE || $beside === FALSE || $there['dev'] !== $beside['dev']) {
-      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('`:root` and `:folder` are not on one file system, so the build could not be moved into place whole.', [':root' => $root, ':folder' => dirname($this->path)]));
+      return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('`:root` and `:folder` are not on one file system, so the build could not be moved into place whole.', [':root' => $root, ':folder' => $this->parent]));
     }
     $name = basename($this->path);
     $handle = @fopen($root . '/lock-' . $name, 'c');
@@ -598,13 +654,7 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
         continue;
       }
       $stage = $this->stage_root . '/build-' . $name;
-      clearstatcache();
-      if (is_link($stage) || is_file($stage)) {
-        @unlink($stage);
-      }
-      elseif (is_dir($stage)) {
-        _provision_recursive_delete($stage);
-      }
+      $this->removeTree($stage);
       clearstatcache();
       if (!file_exists($stage) && !is_link($stage)) {
         @unlink($this->markerFor($stage));
@@ -614,6 +664,47 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
         fclose($handle);
       }
     }
+  }
+
+  /**
+   * Removes what the failed build made: the stage, whatever it holds.
+   */
+  protected function removeFailedBuild() {
+    $path = $this->cleanPath();
+    clearstatcache();
+    if ($this->made_path && $this->pathIsRemovable($path) && (file_exists($path) || is_link($path))) {
+      $this->notice(dt('Removing what the failed build left at `:path`.', [':path' => $path]));
+      $this->removeTree($path);
+      clearstatcache();
+    }
+    if ($path !== '' && !file_exists($path) && !is_link($path)) {
+      $this->clearBuildMarker();
+    }
+  }
+
+  /**
+   * Removes a folder of the backend user's with all it holds, never through
+   * a link; TRUE when nothing is left. Whatever is not a folder is unlinked,
+   * FIFOs among them, and each folder is opened to its owner before it is
+   * emptied, since the copy keeps the source's modes.
+   */
+  protected function removeTree($path) {
+    clearstatcache(TRUE, $path);
+    $stat = @lstat($path);
+    if ($stat === FALSE) {
+      return TRUE;
+    }
+    if (($stat['mode'] & 0170000) !== 0040000) {
+      return @unlink($path);
+    }
+    @chmod($path, 0700);
+    $entries = @scandir($path);
+    foreach (is_array($entries) ? $entries : [] as $entry) {
+      if ($entry !== '.' && $entry !== '..') {
+        $this->removeTree($path . '/' . $entry);
+      }
+    }
+    return @rmdir($path);
   }
 
   /**
