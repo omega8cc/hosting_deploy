@@ -469,31 +469,51 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
   /**
    * The finished build moved beside the source, whole.
    *
-   * rename() takes the new name's parent by its path: the folders from it up
-   * to / must be the ones read before the build, none of them swapped for a
-   * link or another folder meanwhile, or the move could land wherever a
-   * login pointed it. It never follows a link at the new name and fails over
-   * a folder that holds anything, so a name taken while the build ran stays
-   * as it is and the build is removed as a failed one. The name's inode and
-   * the folders above it are read again after the move.
+   * The folders from the new name's parent up to / must be the ones read
+   * before the build, none of them swapped for a link or another folder
+   * meanwhile, or the move could land wherever a login pointed it. The move
+   * is made from inside the parent, entered and checked by its inode, with
+   * the bare name: a parent swapped after that check is not where the build
+   * goes. rename() never follows a link at the new name and fails over a
+   * folder that holds anything, so a name taken while the build ran stays
+   * as it is and the build is removed as a failed one.
    */
   protected function placeFolder() {
-    $target = $this->parent . '/' . basename($this->path);
+    $name = basename($this->path);
     if ($this->parentChain() !== $this->parents) {
       return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('A folder above `:path` changed while the build ran.', [':path' => $this->path]));
     }
-    clearstatcache();
-    if (file_exists($target) || is_link($target)) {
-      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` appeared while the build ran.', [':path' => $this->path]));
-    }
     $made = @lstat($this->stage);
-    if ($made === FALSE || !@rename($this->stage, $target)) {
+    $back = getcwd();
+    if ($made === FALSE || !@chdir($this->parent)) {
       return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The build could not be moved to `:path`.', [':path' => $this->path]));
     }
-    clearstatcache();
-    $now = @lstat($target);
-    if ($now === FALSE || $now['ino'] !== $made['ino'] || $now['dev'] !== $made['dev'] || $this->parentChain() !== $this->parents) {
-      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder at `:path` is no longer the build.', [':path' => $this->path]));
+    try {
+      clearstatcache();
+      $here = @lstat('.');
+      if ($here === FALSE || $here['dev'] !== $this->parents[0][1] || $here['ino'] !== $this->parents[0][2]) {
+        return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('A folder above `:path` changed while the build ran.', [':path' => $this->path]));
+      }
+      if (file_exists($name) || is_link($name)) {
+        return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder `:path` appeared while the build ran.', [':path' => $this->path]));
+      }
+      if (!@rename($this->stage, $name)) {
+        return $this->buildError('PLATFORM_LOCK_BUILD_FOLDER', dt('The build could not be moved to `:path`.', [':path' => $this->path]));
+      }
+      clearstatcache();
+      $now = @lstat($name);
+      if ($now === FALSE || $now['ino'] !== $made['ino'] || $now['dev'] !== $made['dev']) {
+        return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('The folder at `:path` is no longer the build.', [':path' => $this->path]));
+      }
+    }
+    finally {
+      if (is_string($back) && $back !== '') {
+        @chdir($back);
+      }
+    }
+    // In place: a parent swapped since leaves the platform's path elsewhere.
+    if ($this->parentChain() !== $this->parents) {
+      return $this->buildError('PLATFORM_LOCK_BUILD_TAKEN', dt('A folder above `:path` changed while the build was moved there.', [':path' => $this->path]));
     }
     return TRUE;
   }
@@ -550,13 +570,21 @@ class Provision_ComposerLockBuild extends Provision_DeployCommand {
     }
     $open = $this->stageOpenAt(dirname($root), FALSE);
     clearstatcache();
-    if ($open === '' && !file_exists($root) && !is_link($root) && !@mkdir($root, 0700)) {
+    if ($open === '' && !file_exists($root) && !is_link($root)) {
+      // The warning itself, caught here: under Drush's own error handler a
+      // warning never reaches error_get_last().
+      $why = '';
+      set_error_handler(function ($number, $text) use (&$why) {
+        $why = (string) $text;
+        return TRUE;
+      });
+      $made = mkdir($root, 0700);
+      restore_error_handler();
       clearstatcache();
-      if (!file_exists($root) && !is_link($root)) {
-        $last = error_get_last();
+      if (!$made && !file_exists($root) && !is_link($root)) {
         return $this->buildError('PLATFORM_LOCK_BUILD_STAGE', dt('The folder `:root` the build is made in could not be made: :why', [
           ':root' => $root,
-          ':why' => (is_array($last) && isset($last['message'])) ? $last['message'] : 'no reason given',
+          ':why' => ($why !== '') ? $why : 'no reason given',
         ]));
       }
     }
