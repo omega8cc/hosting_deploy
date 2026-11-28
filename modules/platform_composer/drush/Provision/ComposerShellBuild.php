@@ -42,6 +42,11 @@ class Provision_ComposerShellBuild extends Provision_ComposerLockBuild {
   // step gets that long before the backend kills what it can.
   protected $stop_grace = 20;
 
+  // The removal after a Delete that left the disk alone says a failure in
+  // the Delete's log, as a warning: no task words it as a build's result,
+  // and the folder and its marker then stay for the shell login to remove.
+  protected $failure_is_warning = FALSE;
+
   /**
    * @param array $recipe
    *   'path', 'source', 'docroot', 'resolve' (array), 'judge' (a callable)
@@ -94,6 +99,102 @@ class Provision_ComposerShellBuild extends Provision_ComposerLockBuild {
       return TRUE;
     }
     return FALSE;
+  }
+
+  /**
+   * After a platform Delete that left the disk alone: the folder an
+   * unfinished build as the shell login left, removed by that login.
+   *
+   * Provision deletes nothing on disk for a platform whose root holds no
+   * codebase (a build cut off before its install leaves no vendor/), since
+   * nothing verified what stands there, and leaves the leftover of an
+   * unfinished build to the hook that knows it. This one knows the folder
+   * beside a marker naming the shell login of the account whose static
+   * folder holds it: the program's remove takes that folder as the login,
+   * and only when the program's own copy made and recorded it; never while
+   * the build's group still runs. The marker goes once the folder has, and
+   * whatever else is there stays.
+   *
+   * @return bool
+   *   TRUE when the backend flagged such a Delete, whatever was done here.
+   */
+  public function removeLeftoverAfterDelete() {
+    // Drush gives an unset context as an empty array: only a default it
+    // keeps tells a Delete with no codebase from any other.
+    if (!is_array(drush_get_context('PROVISION_NO_CODEBASE_DEPLOY_PATHS', FALSE))) {
+      return FALSE;
+    }
+    $path = $this->cleanPath();
+    $marker = $this->buildMarker();
+    clearstatcache();
+    if ($path === '' || !$marker || !is_file($marker) || is_link($path) || !is_dir($path)) {
+      return TRUE;
+    }
+    $login = $this->markerLogin($marker);
+    $static = $this->static;
+    if ($static === '' && $login !== '') {
+      $static = '/data/disk/' . substr($login, 0, -4) . '/static';
+    }
+    if ($login === '' || strpos($path, $static . '/') !== 0) {
+      $this->notice(dt('The folder at `:path` is left as it is: its marker names no shell login of the account it is in.', array(':path' => $path)));
+      return TRUE;
+    }
+    if ($this->markerGroupAlive($marker)) {
+      $this->warning(dt('The folder at `:path` is left as it is: a build process still writes into it.', array(':path' => $path)));
+      return TRUE;
+    }
+    // As the build's plan asks: the backend user is that account's own, and
+    // the program is root's, as BOA installs it, and no one else's to change.
+    if ($this->backendUser() . '.ftp' !== $login) {
+      $this->notice(dt('The folder at `:path` is left as it is: its marker names the shell login of another account.', array(':path' => $path)));
+      return TRUE;
+    }
+    clearstatcache(TRUE, $this->program);
+    $stat = @lstat($this->program);
+    if ($stat === FALSE || ($stat['mode'] & 0170000) !== 0100000 || $stat['uid'] !== 0 || ($stat['mode'] & 0022) || !($stat['mode'] & 0001)) {
+      $this->warning(dt('The folder at `:path` is left as it is: the shell login\'s build program `:program` is not on this server as BOA installs it.', array(':path' => $path, ':program' => $this->program)));
+      return TRUE;
+    }
+    $this->login = $login;
+    $this->marker_login = $login;
+    $this->notice(dt('Removing the folder an unfinished build left at `:path`, as the account\'s shell login.', array(':path' => $path)));
+    $this->failure_is_warning = TRUE;
+    $this->removeAsLogin($path);
+    $this->failure_is_warning = FALSE;
+    clearstatcache();
+    if (!file_exists($path) && !is_link($path)) {
+      $this->clearBuildMarker();
+    }
+    return TRUE;
+  }
+
+  /**
+   * The name of the process's own user, the account's backend user.
+   */
+  protected function backendUser() {
+    $me = (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) ? posix_getpwuid(posix_geteuid()) : FALSE;
+    return (is_array($me) && isset($me['name']) && is_string($me['name'])) ? $me['name'] : '';
+  }
+
+  /**
+   * The program's remove of a folder, as the login. It removes a large tree
+   * without a word and bounds that by its own step limit, so for this one
+   * call the backend's silence limit is the step limit too.
+   */
+  protected function removeAsLogin($path) {
+    $silence = $this->silence_limit;
+    $this->silence_limit = max($this->silence_limit, $this->step_limit);
+    $ok = $this->runAsLogin(array('remove', $path));
+    $this->silence_limit = $silence;
+    return $ok;
+  }
+
+  protected function buildError($code, $message) {
+    if ($this->failure_is_warning) {
+      $this->warning($message);
+      return FALSE;
+    }
+    return parent::buildError($code, $message);
   }
 
   /**
@@ -221,7 +322,7 @@ class Provision_ComposerShellBuild extends Provision_ComposerLockBuild {
         sleep(1);
       }
       $this->notice(dt('Removing what the failed build left at `:path`, as the account\'s shell login.', array(':path' => $path)));
-      $this->runAsLogin(array('remove', $path));
+      $this->removeAsLogin($path);
     }
     clearstatcache();
     if (!$this->made_path || ($path !== '' && !file_exists($path) && !is_link($path))) {

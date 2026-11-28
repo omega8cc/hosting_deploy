@@ -85,9 +85,12 @@ function drush_platform_composer_provision_delete_validate() {
  */
 function drush_platform_composer_post_provision_delete() {
   if (d()->type =='platform') {
-    // A build as the shell login: its marker goes once its folder has.
+    // A build as the shell login: after a Delete that left the disk alone,
+    // its unfinished folder is removed by the login itself; its marker goes
+    // once its folder has.
     foreach (_platform_composer_shell_build_folders() as $folder) {
       $build = new Provision_ComposerShellBuild(array('path' => $folder));
+      $build->removeLeftoverAfterDelete();
       $build->forgetGoneBuild();
     }
     $platform = new Provision_ComposerCreateProject();
