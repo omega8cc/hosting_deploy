@@ -17,6 +17,51 @@ function drush_platform_composer_provision_verify_validate() {
     $platform = new Provision_ComposerCreateProject();
     return $platform->validateProvisionVerify();
   }
+  return _platform_composer_shell_build_guard('Verify');
+}
+
+/**
+ * The folders of a platform added by its path that a build as the account's
+ * shell login may have made, each with a marker beside it naming the login:
+ * the docroot's parent, the docroot. None for a platform the panel built.
+ */
+function _platform_composer_shell_build_folders() {
+  // The parent first: a copy of this module older than the build from a
+  // platform's own lock has neither class.
+  if (d()->type != 'platform' || !class_exists('Provision_ComposerLockBuild') || !class_exists('Provision_ComposerShellBuild')) {
+    return array();
+  }
+  foreach (array('composer_project_package', 'composer_project_path', 'composer_git_path', 'composer_git_project_url', 'git_repository_url', 'git_repository_path', 'repo_url', 'makefile') as $property) {
+    if (d()->{$property}) {
+      return array();
+    }
+  }
+  $root = rtrim((string) d()->root, '/');
+  if ($root === '' || $root[0] !== '/') {
+    return array();
+  }
+  $out = array();
+  foreach (array_unique(array(dirname($root), $root)) as $folder) {
+    if (Provision_ComposerShellBuild::markerNamesLogin($folder)) {
+      $out[] = $folder;
+    }
+  }
+  return $out;
+}
+
+/**
+ * Refuses a task of a platform added by its path while a build as the shell
+ * login writes into its folder, and a Verify while that build never finished:
+ * no build strategy runs such a platform's tasks to ask its own class.
+ */
+function _platform_composer_shell_build_guard($what) {
+  foreach (_platform_composer_shell_build_folders() as $folder) {
+    $build = new Provision_ComposerShellBuild(array('path' => $folder));
+    $why = $build->taskRefusal(dt($what), $what === 'Verify');
+    if ($why !== '') {
+      return drush_set_error(($what === 'Verify' && strpos($why, 'has not finished') !== FALSE) ? 'PLATFORM_BUILD_UNFINISHED' : 'PLATFORM_BUILD_STILL_RUNNING', $why);
+    }
+  }
 }
 
 /**
@@ -30,6 +75,7 @@ function drush_platform_composer_provision_delete_validate() {
     $platform = new Provision_ComposerCreateProject();
     return $platform->validateProvisionDelete();
   }
+  return _platform_composer_shell_build_guard('Delete');
 }
 
 /**
@@ -39,6 +85,14 @@ function drush_platform_composer_provision_delete_validate() {
  */
 function drush_platform_composer_post_provision_delete() {
   if (d()->type =='platform') {
+    // A build as the shell login: after a Delete that left the disk alone,
+    // its unfinished folder is removed by the login itself; its marker goes
+    // once its folder has.
+    foreach (_platform_composer_shell_build_folders() as $folder) {
+      $build = new Provision_ComposerShellBuild(array('path' => $folder));
+      $build->removeLeftoverAfterDelete();
+      $build->forgetGoneBuild();
+    }
     $platform = new Provision_ComposerCreateProject();
     return $platform->postProvisionDelete();
   }

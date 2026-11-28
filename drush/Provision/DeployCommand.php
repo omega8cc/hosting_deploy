@@ -53,6 +53,11 @@ class Provision_DeployCommand extends Provision_ShellCommand {
   // Whether this run found no folder at the build path and so made its own.
   protected $made_path = FALSE;
 
+  // The account's shell login a build runs its steps as, '' for this user.
+  // The marker names it: what is left of a step's group may then be the
+  // login's alone, which this user cannot signal.
+  protected $marker_login = '';
+
   /**
    * The folder the build makes. Each strategy names its own.
    */
@@ -372,6 +377,9 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     }
     $text = 'A platform build into ' . $this->cleanPath() . ' started on ' . date('Y-m-d H:i:s') . ' (process ' . getmypid() . ") and has not finished.\n";
     $text .= "The build removes this file when it ends. While it is here, Verify does not take that folder as the platform.\n";
+    if (preg_match('/^[a-z][a-z0-9_]{0,31}\.ftp$/', $this->marker_login)) {
+      $text .= 'login=' . $this->marker_login . "\n";
+    }
     $this->marker_text = $text;
     if (!$this->writeMarker($marker, $text)) {
       $this->notice(dt('The build marker `:marker` could not be written.', [':marker' => $marker]));
@@ -464,22 +472,67 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     }
     $text = 'A build process (group :pgid) still writes into `:path`, so this :what changes nothing. Run it again once that process has ended';
     // Only a group whose leader still runs is bounded by it: what a step
-    // left running after its own command ended has no limit.
-    $text .= $this->markerLeaderRuns($marker, $pgid) ? '; it ends within :minutes minutes of its start.' : '. The command that started it has ended, so nothing here ends what is left of that group: the account\'s system user can, with `kill -- -:pgid`.';
+    // left running after its own command ended has no limit, but for the
+    // shell login's program, which bounds each of its steps itself.
+    $login = $this->markerLogin($marker);
+    if ($this->markerLeaderRuns($marker, $pgid)) {
+      $text .= '; it ends within :minutes minutes of its start.';
+    }
+    elseif ($login !== '') {
+      $text .= '. The command that started it has ended; what is left runs as the account\'s shell login :login, whose build program stops each of its steps within :minutes minutes.';
+    }
+    else {
+      $text .= '. The command that started it has ended, so nothing here ends what is left of that group: the account\'s system user can, with `kill -- -:pgid`.';
+    }
     $this->buildError('PLATFORM_BUILD_STILL_RUNNING', dt($text, [
       ':pgid' => $pgid,
       ':path' => $this->cleanPath(),
       ':what' => $what,
       ':minutes' => (int) ceil(($this->step_limit + 70) / 60),
+      ':login' => $login,
     ]));
     return TRUE;
+  }
+
+  /**
+   * The shell login a marker says the build runs its steps as, or ''.
+   */
+  protected function markerLogin($marker) {
+    $text = self::markerText($marker);
+    $m = array();
+    return (is_string($text) && preg_match('/^login=([a-z][a-z0-9_]{0,31}\.ftp)$/m', $text, $m)) ? $m[1] : '';
+  }
+
+  /**
+   * A marker's text, or FALSE when it is not a plain file.
+   *
+   * It sits in a folder the account's logins write: never through a link,
+   * and opened without blocking, so a FIFO put at its name holds nothing.
+   */
+  public static function markerText($marker) {
+    if (!is_string($marker) || $marker === '') {
+      return FALSE;
+    }
+    clearstatcache(TRUE, $marker);
+    $before = @lstat($marker);
+    if ($before === FALSE || ($before['mode'] & 0170000) !== 0100000) {
+      return FALSE;
+    }
+    $handle = @fopen($marker, 'rn');
+    if ($handle === FALSE) {
+      return FALSE;
+    }
+    $now = fstat($handle);
+    $text = ($now !== FALSE && $now['ino'] === $before['ino'] && $now['dev'] === $before['dev']) ? stream_get_contents($handle, 4096) : FALSE;
+    fclose($handle);
+    return $text;
   }
 
   /**
    * Whether the leader a marker names, the step's own bounded command, runs.
    */
   protected function markerLeaderRuns($marker, $pgid) {
-    $text = @file_get_contents($marker, FALSE, NULL, 0, 4096);
+    $text = self::markerText($marker);
     $now = $this->processStart($pgid);
     if ($now === '') {
       return FALSE;
@@ -506,7 +559,7 @@ class Provision_DeployCommand extends Provision_ShellCommand {
     if (!$marker || !is_file($marker) || !function_exists('posix_kill')) {
       return 0;
     }
-    $text = @file_get_contents($marker, FALSE, NULL, 0, 4096);
+    $text = self::markerText($marker);
     if (!is_string($text) || !preg_match('/^pgid=([0-9]+)$/m', $text, $m) || (int) $m[1] < 2) {
       return 0;
     }
@@ -522,9 +575,26 @@ class Provision_DeployCommand extends Provision_ShellCommand {
         return 0;
       }
     }
+    if (posix_kill(-$pgid, 0)) {
+      return $pgid;
+    }
     // A build runs as this same user: a group it cannot signal (EPERM) is
-    // never the build's, and does not keep anything from going ahead.
-    return posix_kill(-$pgid, 0) ? $pgid : 0;
+    // never the build's, and does not keep anything from going ahead. A
+    // build whose steps run as the account's shell login says so: that
+    // group is the login's once this user's own members are gone, and is
+    // still the build. The number cannot name another group while any
+    // member is left, but may once the group has ended: only within the
+    // time the login's program bounds a step to, from the marker's last
+    // write at the step's start.
+    $login = preg_match('/^login=[a-z][a-z0-9_]{0,31}\.ftp$/m', $text);
+    if (!$login || !function_exists('posix_get_last_error') || posix_get_last_error() !== 1) {
+      return 0;
+    }
+    // The program ends each step, and whatever the step left, within the
+    // step limit and its own stop. A marker dated ahead of now bounds nothing.
+    $written = @filemtime($marker);
+    $age = ($written === FALSE) ? -1000 : time() - $written;
+    return ($age > -60 && $age < $this->step_limit + 300) ? $pgid : 0;
   }
 
   protected function clearBuildMarker() {
